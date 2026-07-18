@@ -93,21 +93,17 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
         const property_type = typeMap[rawType] ?? 'apartment';
         try {
           await db('properties').insert({
+            title: title,
             title_ar: title,
-            title_en: title,
-            property_type,
-            purpose: 'sale',
-            price: parseFloat(String(row['السعر'] ?? row['price'] ?? '0')) || 0,
-            currency: 'SAR',
-            city_id: riyadhCity?.id ?? null,
-            area_sqm: parseFloat(String(row['المساحة'] ?? row['area'] ?? '0')) || null,
-            rooms: parseInt(String(row['الغرف'] ?? row['rooms'] ?? '0')) || null,
-            bathrooms: parseInt(String(row['الحمامات'] ?? row['bathrooms'] ?? '0')) || null,
+            type: property_type,
             status: 'available',
+            price: parseFloat(String(row['السعر'] ?? row['price'] ?? '0')) || 0,
+            area: parseFloat(String(row['المساحة'] ?? row['area'] ?? '0')) || null,
+            bedrooms: parseInt(String(row['الغرف'] ?? row['rooms'] ?? '0')) || null,
+            bathrooms: parseInt(String(row['الحمامات'] ?? row['bathrooms'] ?? '0')) || null,
+            city: riyadhCity?.name_ar ?? 'الرياض',
             description_ar: String(row['الوصف'] ?? row['description'] ?? ''),
-            listing_type: 'sale',
             is_featured: false,
-            negotiable: true,
           });
           imported++;
         } catch (err: any) {
