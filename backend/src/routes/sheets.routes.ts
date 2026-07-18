@@ -73,21 +73,41 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
     } else {
       // properties
       const riyadhCity = await db('cities').where('name_ar', 'like', '%الرياض%').first();
+
+      const typeMap: Record<string, string> = {
+        'شقة': 'apartment', 'apartment': 'apartment',
+        'فيلا': 'villa', 'villa': 'villa',
+        'أرض': 'land', 'ارض': 'land', 'land': 'land',
+        'مبنى': 'building', 'عمارة': 'building', 'building': 'building',
+        'مكتب': 'office', 'office': 'office',
+        'محل': 'showroom', 'showroom': 'showroom',
+        'مستودع': 'warehouse', 'warehouse': 'warehouse',
+        'مزرعة': 'farm', 'farm': 'farm',
+        'other': 'other',
+      };
+
       for (const row of rows) {
         const title = String(row['العنوان'] ?? row['title'] ?? '');
         if (!title) continue;
+        const rawType = String(row['النوع'] ?? row['type'] ?? '').trim();
+        const property_type = typeMap[rawType] ?? 'apartment';
         try {
           await db('properties').insert({
-            title: title,
             title_ar: title,
-            type: String(row['النوع'] ?? row['type'] ?? 'apartment'),
+            title_en: title,
+            property_type,
+            purpose: 'sale',
             price: parseFloat(String(row['السعر'] ?? row['price'] ?? '0')) || 0,
+            currency: 'SAR',
             city_id: riyadhCity?.id ?? null,
-            area: parseFloat(String(row['المساحة'] ?? row['area'] ?? '0')) || null,
-            bedrooms: parseInt(String(row['الغرف'] ?? row['rooms'] ?? '0')) || null,
+            area_sqm: parseFloat(String(row['المساحة'] ?? row['area'] ?? '0')) || null,
+            rooms: parseInt(String(row['الغرف'] ?? row['rooms'] ?? '0')) || null,
             bathrooms: parseInt(String(row['الحمامات'] ?? row['bathrooms'] ?? '0')) || null,
-            status: String(row['الحالة'] ?? row['status'] ?? 'available'),
+            status: 'available',
             description_ar: String(row['الوصف'] ?? row['description'] ?? ''),
+            listing_type: 'sale',
+            is_featured: false,
+            negotiable: true,
           }).onConflict().ignore();
           imported++;
         } catch { /* skip */ }
