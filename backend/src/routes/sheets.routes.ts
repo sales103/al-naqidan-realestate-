@@ -108,9 +108,11 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
             listing_type: 'sale',
             is_featured: false,
             negotiable: true,
-          }).onConflict().ignore();
+          });
           imported++;
-        } catch { /* skip */ }
+        } catch (err: any) {
+          console.error('[IMPORT] row error:', err?.message, JSON.stringify(row));
+        }
       }
     }
 
