@@ -14,19 +14,15 @@ router.post('/connect/:instance', async (req: Request, res: Response, next: Next
   try {
     const { instance } = req.params;
 
-    // Try to create instance (will fail if exists — that's fine)
+    // Try to create instance
     try {
       await axios.post(evoUrl('/instance/create'), {
         instanceName: instance,
         qrcode: true,
         integration: 'WHATSAPP-BAILEYS',
-        webhook: `${config.app.url}/api/webhooks/whatsapp`,
-        webhookByEvents: false,
-        events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'],
       }, { headers: evoHeaders() });
     } catch {
-      // Instance already exists — connect it
-      await axios.get(evoUrl(`/instance/connect/${instance}`), { headers: evoHeaders() }).catch(() => null);
+      // Instance may already exist — ignore
     }
 
     // Get QR code
