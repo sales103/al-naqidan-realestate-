@@ -27,15 +27,16 @@ const errorFileTransport = new DailyRotateFile({
   format: combine(timestamp(), errors({ stack: true }), json()),
 });
 
-const transports: winston.transport[] = [fileTransport, errorFileTransport];
-
-if (!config.app.isProduction) {
-  transports.push(
-    new winston.transports.Console({
-      format: combine(colorize(), timestamp({ format: 'HH:mm:ss' }), errors({ stack: true }), devFormat),
-    })
-  );
-}
+const transports: winston.transport[] = [
+  fileTransport,
+  errorFileTransport,
+  // Always log to console (stdout) so Railway/cloud can capture logs
+  new winston.transports.Console({
+    format: config.app.isProduction
+      ? combine(timestamp(), errors({ stack: true }), json())
+      : combine(colorize(), timestamp({ format: 'HH:mm:ss' }), errors({ stack: true }), devFormat),
+  }),
+];
 
 export const logger = winston.createLogger({
   level: config.logging.level,
