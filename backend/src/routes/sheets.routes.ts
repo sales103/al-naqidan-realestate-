@@ -78,17 +78,16 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
         if (!title) continue;
         try {
           await db('properties').insert({
+            title: title,
             title_ar: title,
-            title_en: String(row['title_en'] ?? title),
-            property_type: String(row['النوع'] ?? row['type'] ?? 'apartment'),
+            type: String(row['النوع'] ?? row['type'] ?? 'apartment'),
             price: parseFloat(String(row['السعر'] ?? row['price'] ?? '0')) || 0,
-            city_id: riyadhCity?.id,
-            area_sqm: parseFloat(String(row['المساحة'] ?? row['area'] ?? '0')) || null,
-            rooms: parseInt(String(row['الغرف'] ?? row['rooms'] ?? '0')) || null,
+            city_id: riyadhCity?.id ?? null,
+            area: parseFloat(String(row['المساحة'] ?? row['area'] ?? '0')) || null,
+            bedrooms: parseInt(String(row['الغرف'] ?? row['rooms'] ?? '0')) || null,
             bathrooms: parseInt(String(row['الحمامات'] ?? row['bathrooms'] ?? '0')) || null,
             status: String(row['الحالة'] ?? row['status'] ?? 'available'),
             description_ar: String(row['الوصف'] ?? row['description'] ?? ''),
-            listing_type: String(row['listing_type'] ?? 'sale'),
           }).onConflict().ignore();
           imported++;
         } catch { /* skip */ }
