@@ -1,3 +1,8 @@
+// Catch ALL errors early before any imports
+process.on('uncaughtException', (err) => { console.error('[FATAL] uncaughtException:', err); process.exit(1); });
+process.on('unhandledRejection', (err) => { console.error('[FATAL] unhandledRejection:', err); process.exit(1); });
+console.log('[BOOT] Starting Al-Naqidan backend...');
+
 import 'dotenv/config';
 import express from 'express';
 import helmet from 'helmet';
