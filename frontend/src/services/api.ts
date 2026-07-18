@@ -67,6 +67,11 @@ export const usersApi = {
   remove: (id: string) => api.delete(`/users/${id}`),
 };
 
+// ─── WhatsApp ────────────────────────────────────────────────────────────────
+export const whatsappApi = {
+  status: (instance: string) => api.get(`/whatsapp/status/${instance}`),
+};
+
 // ─── Conversations ───────────────────────────────────────────────────────────
 export const conversationsApi = {
   list: (params?: Record<string, any>) => api.get('/conversations', { params }),
