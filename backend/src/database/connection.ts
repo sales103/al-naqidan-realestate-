@@ -12,16 +12,19 @@ export const getDatabase = (): Knex => {
 export const initDatabase = async (): Promise<Knex> => {
   if (db) return db;
 
+  const connectionString = process.env['DATABASE_URL'];
   db = knex({
     client: 'pg',
-    connection: {
-      host: config.database.host,
-      port: config.database.port,
-      database: config.database.name,
-      user: config.database.user,
-      password: config.database.password,
-      ssl: config.database.ssl ? { rejectUnauthorized: false } : false,
-    },
+    connection: connectionString
+      ? { connectionString, ssl: { rejectUnauthorized: false } }
+      : {
+          host: config.database.host,
+          port: config.database.port,
+          database: config.database.name,
+          user: config.database.user,
+          password: config.database.password,
+          ssl: config.database.ssl ? { rejectUnauthorized: false } : false,
+        },
     pool: {
       min: config.database.poolMin,
       max: config.database.poolMax,
