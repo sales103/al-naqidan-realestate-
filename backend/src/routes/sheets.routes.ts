@@ -95,15 +95,26 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
           await db('properties').insert({
             title: title,
             title_ar: title,
+            title_en: title,
             type: property_type,
+            property_type,
             status: 'available',
+            purpose: 'sale',
+            currency: 'SAR',
+            listing_type: 'sale',
             price: parseFloat(String(row['السعر'] ?? row['price'] ?? '0')) || 0,
             area: parseFloat(String(row['المساحة'] ?? row['area'] ?? '0')) || null,
+            area_sqm: parseFloat(String(row['المساحة'] ?? row['area'] ?? '0')) || null,
             bedrooms: parseInt(String(row['الغرف'] ?? row['rooms'] ?? '0')) || null,
+            rooms: parseInt(String(row['الغرف'] ?? row['rooms'] ?? '0')) || null,
             bathrooms: parseInt(String(row['الحمامات'] ?? row['bathrooms'] ?? '0')) || null,
             city: riyadhCity?.name_ar ?? 'الرياض',
+            city_id: riyadhCity?.id ?? null,
             description_ar: String(row['الوصف'] ?? row['description'] ?? ''),
             is_featured: false,
+            negotiable: true,
+            inquiry_count: 0,
+            view_count: 0,
           });
           imported++;
         } catch (err: any) {
