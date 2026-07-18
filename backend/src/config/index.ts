@@ -18,7 +18,7 @@ export const config = {
   app: {
     name: optionalEnv('APP_NAME', 'Al-Naqidan Real Estate AI'),
     version: optionalEnv('APP_VERSION', '1.0.0'),
-    port: parseInt(optionalEnv('APP_PORT', '3000'), 10),
+    port: parseInt(process.env['PORT'] ?? optionalEnv('APP_PORT', '3000'), 10),
     url: optionalEnv('APP_URL', 'http://localhost:3000'),
     env: optionalEnv('NODE_ENV', 'development'),
     isProduction: optionalEnv('NODE_ENV', 'development') === 'production',
