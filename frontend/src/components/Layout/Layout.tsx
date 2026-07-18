@@ -2,7 +2,7 @@ import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar.tsx';
 import Header from './Header.tsx';
 import { useState } from 'react';
-import { useRealtimeNotifications } from '../../hooks/useRealtimeNotifications.tsx';
+import { useRealtimeNotifications } from '../../hooks/useRealtimeNotifications';
 
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
