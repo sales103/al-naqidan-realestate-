@@ -1,0 +1,127 @@
+{
+  "name": "01 - استقبال رسائل واتساب",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-incoming",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-receiver",
+      "name": "Webhook - استقبال واتساب",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, received: true }) }}",
+        "options": {}
+      },
+      "id": "immediate-response",
+      "name": "رد فوري 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [460, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.body.event }}",
+              "rightValue": "messages.upsert",
+              "operator": { "type": "string", "operation": "equals" }
+            },
+            {
+              "id": "c2",
+              "leftValue": "={{ $json.body.data.key.fromMe }}",
+              "rightValue": false,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "filter-valid",
+      "name": "فلتر: رسالة صادرة",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\nconst chatId = body.data?.key?.remoteJid ?? '';\n\n// Skip groups\nif (chatId.includes('@g.us')) { return []; }\n\nconst msg = body.data?.message ?? {};\nlet content = null;\nlet messageType = 'text';\nlet mediaUrl = null;\nlet mimeType = null;\n\nif (msg.conversation) { content = msg.conversation; messageType = 'text'; }\nelse if (msg.extendedTextMessage) { content = msg.extendedTextMessage.text; messageType = 'text'; }\nelse if (msg.imageMessage) { content = msg.imageMessage.caption; mediaUrl = msg.imageMessage.url; mimeType = msg.imageMessage.mimetype; messageType = 'image'; }\nelse if (msg.videoMessage) { content = msg.videoMessage.caption; mediaUrl = msg.videoMessage.url; mimeType = msg.videoMessage.mimetype; messageType = 'video'; }\nelse if (msg.audioMessage) { mediaUrl = msg.audioMessage.url; mimeType = msg.audioMessage.mimetype; messageType = 'audio'; }\nelse if (msg.documentMessage) { content = msg.documentMessage.title; mediaUrl = msg.documentMessage.url; mimeType = msg.documentMessage.mimetype; messageType = 'document'; }\nelse if (msg.locationMessage) { messageType = 'location'; }\n\nreturn [{\n  json: {\n    chat_id: chatId,\n    phone: chatId.replace('@s.whatsapp.net', ''),\n    push_name: body.data?.pushName,\n    message_id: body.data?.key?.id,\n    content,\n    message_type: messageType,\n    media_url: mediaUrl,\n    mime_type: mimeType,\n    timestamp: body.data?.messageTimestamp,\n    raw: body\n  }\n}];"
+      },
+      "id": "extract-message",
+      "name": "استخراج بيانات الرسالة",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.BACKEND_URL }}/api/webhooks/whatsapp",
+        "authentication": "none",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "=", "value": "={{ $json }}" }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "forward-backend",
+      "name": "إرسال للـ Backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "level": "error",
+        "message": "=Failed to process WhatsApp message: {{ $json.error ?? 'Unknown error' }}",
+        "additionalFields": {
+          "chat_id": "={{ $('extract-message').item.json.chat_id }}"
+        }
+      },
+      "id": "log-error",
+      "name": "تسجيل الخطأ",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [1120, 500]
+    }
+  ],
+  "connections": {
+    "Webhook - استقبال واتساب": {
+      "main": [[
+        { "node": "رد فوري 200", "type": "main", "index": 0 },
+        { "node": "فلتر: رسالة صادرة", "type": "main", "index": 0 }
+      ]]
+    },
+    "فلتر: رسالة صادرة": {
+      "main": [
+        [{ "node": "استخراج بيانات الرسالة", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "استخراج بيانات الرسالة": {
+      "main": [[{ "node": "إرسال للـ Backend", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "error-handler"
+  },
+  "staticData": null,
+  "tags": [{ "name": "whatsapp" }, { "name": "production" }]
+}

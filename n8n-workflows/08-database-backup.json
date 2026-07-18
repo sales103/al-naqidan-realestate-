@@ -1,0 +1,105 @@
+{
+  "name": "08 - النسخ الاحتياطي اليومي",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 2 * * *" }]
+        }
+      },
+      "id": "backup-trigger",
+      "name": "نسخ احتياطي 2 صباحاً",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "command": "pg_dump -h {{ $env.DB_HOST }} -U {{ $env.DB_USER }} -d {{ $env.DB_NAME }} | gzip > /backups/backup-$(date +%Y%m%d_%H%M%S).sql.gz && echo SUCCESS"
+      },
+      "id": "run-backup",
+      "name": "تشغيل النسخ الاحتياطي",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [{
+            "leftValue": "={{ $json.stdout }}",
+            "rightValue": "SUCCESS",
+            "operator": { "type": "string", "operation": "contains" }
+          }]
+        }
+      },
+      "id": "check-success",
+      "name": "التحقق من النجاح",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.EVOLUTION_API_URL }}/message/sendText/{{ $env.EVOLUTION_INSTANCE }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "apikey", "value": "={{ $env.EVOLUTION_API_KEY }}" }]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "number", "value": "={{ $env.ADMIN_WHATSAPP }}" },
+            { "name": "text", "value": "✅ تم النسخ الاحتياطي بنجاح\n📅 {{ new Date().toLocaleString('ar-SA') }}\n💾 قاعدة البيانات: {{ $env.DB_NAME }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "notify-success",
+      "name": "إشعار نجاح",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [900, 220]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.EVOLUTION_API_URL }}/message/sendText/{{ $env.EVOLUTION_INSTANCE }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "apikey", "value": "={{ $env.EVOLUTION_API_KEY }}" }]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "number", "value": "={{ $env.ADMIN_WHATSAPP }}" },
+            { "name": "text", "value": "❌ فشل النسخ الاحتياطي\n📅 {{ new Date().toLocaleString('ar-SA') }}\nيرجى المراجعة فوراً!" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "notify-failure",
+      "name": "إشعار فشل",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [900, 420]
+    }
+  ],
+  "connections": {
+    "نسخ احتياطي 2 صباحاً": {
+      "main": [[{ "node": "تشغيل النسخ الاحتياطي", "type": "main", "index": 0 }]]
+    },
+    "تشغيل النسخ الاحتياطي": {
+      "main": [[{ "node": "التحقق من النجاح", "type": "main", "index": 0 }]]
+    },
+    "التحقق من النجاح": {
+      "main": [
+        [{ "node": "إشعار نجاح", "type": "main", "index": 0 }],
+        [{ "node": "إشعار فشل", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": [{ "name": "backup" }, { "name": "maintenance" }]
+}

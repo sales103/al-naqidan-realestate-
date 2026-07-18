@@ -1,0 +1,110 @@
+{
+  "name": "05 - متابعة العملاء التلقائية",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "minutes", "minutesInterval": 30 }]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "جدولة كل 30 دقيقة",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.BACKEND_URL }}/api/follow-ups/pending",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "id": "get-pending-followups",
+      "name": "جلب المتابعات المعلقة",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "data",
+        "options": {}
+      },
+      "id": "split-followups",
+      "name": "تقسيم المتابعات",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const followUp = $input.first().json;\nconst type = followUp.follow_up_type;\n\nconst messages = {\n  auto_1day: `مرحباً ${followUp.full_name} 👋\\n\\nنأمل أن تكون بخير. تذكرنا بك بعد تواصلك معنا بالأمس حول ${followUp.preferred_property_types?.[0] ?? 'العقار الذي تبحث عنه'}.\\n\\nهل لا تزال مهتماً؟ يسعدنا مساعدتك في إيجاد العقار المثالي. 🏠`,\n  \n  auto_3days: `أهلاً ${followUp.full_name} 😊\\n\\nمرت 3 أيام على تواصلك معنا. هل وجدت ما تبحث عنه؟\\n\\nلدينا عروض جديدة قد تناسبك! هل تود أن أرسل لك بعض الخيارات؟ 🏡`,\n  \n  auto_1week: `السلام عليكم ${followUp.full_name} 🌟\\n\\nأسبوع مضى على اهتمامك بعقاراتنا. نحن هنا لمساعدتك في كل وقت.\\n\\nلدينا عقارات مميزة جديدة في ${followUp.preferred_cities?.[0] ?? 'مدينتك'}. هل أرسل لك التفاصيل؟`,\n  \n  auto_1month: `تحية طيبة ${followUp.full_name} 🤝\\n\\nشهر كامل على تواصلك معنا. نقدر اهتمامك ونتمنى أن نكون قد ساعدناك.\\n\\nسوق العقارات يتحرك! هل طلبك لا يزال قائماً؟ يسعدنا خدمتك دائماً.\\n\\nشركة النقيدان للاستثمارات العقارية 🏢`\n};\n\nreturn [{\n  json: {\n    ...followUp,\n    message: messages[type] ?? messages.auto_1day\n  }\n}];"
+      },
+      "id": "generate-message",
+      "name": "توليد رسالة المتابعة",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.EVOLUTION_API_URL }}/message/sendText/{{ $env.EVOLUTION_INSTANCE }}",
+        "authentication": "headerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "apikey", "value": "={{ $env.EVOLUTION_API_KEY }}" }]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "number", "value": "={{ $json.phone }}" },
+            { "name": "text", "value": "={{ $json.message }}" }
+          ]
+        },
+        "options": { "timeout": 15000 }
+      },
+      "id": "send-followup",
+      "name": "إرسال رسالة المتابعة",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.BACKEND_URL }}/api/follow-ups/{{ $json.follow_up_id }}/complete",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "id": "mark-complete",
+      "name": "تحديث حالة المتابعة",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1340, 300]
+    }
+  ],
+  "connections": {
+    "جدولة كل 30 دقيقة": {
+      "main": [[{ "node": "جلب المتابعات المعلقة", "type": "main", "index": 0 }]]
+    },
+    "جلب المتابعات المعلقة": {
+      "main": [[{ "node": "تقسيم المتابعات", "type": "main", "index": 0 }]]
+    },
+    "تقسيم المتابعات": {
+      "main": [[{ "node": "توليد رسالة المتابعة", "type": "main", "index": 0 }]]
+    },
+    "توليد رسالة المتابعة": {
+      "main": [[{ "node": "إرسال رسالة المتابعة", "type": "main", "index": 0 }]]
+    },
+    "إرسال رسالة المتابعة": {
+      "main": [[{ "node": "تحديث حالة المتابعة", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "tags": [{ "name": "follow-up" }, { "name": "automation" }]
+}

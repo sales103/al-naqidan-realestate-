@@ -1,0 +1,32 @@
+import { Router } from 'express';
+import authRoutes from './auth.routes.js';
+import propertyRoutes from './property.routes.js';
+import clientRoutes from './client.routes.js';
+import webhookRoutes from './webhook.routes.js';
+import dashboardRoutes from './dashboard.routes.js';
+import conversationRoutes from './conversation.routes.js';
+import appointmentRoutes from './appointment.routes.js';
+import dealRoutes from './deal.routes.js';
+import followUpRoutes from './followup.routes.js';
+import whatsappRoutes from './whatsapp.routes.js';
+import sheetsRoutes from './sheets.routes.js';
+import usersRoutes from './users.routes.js';
+import eventsRoutes from './events.routes.js';
+
+const router = Router();
+
+router.use('/auth', authRoutes);
+router.use('/properties', propertyRoutes);
+router.use('/clients', clientRoutes);
+router.use('/webhooks', webhookRoutes);
+router.use('/dashboard', dashboardRoutes);
+router.use('/conversations', conversationRoutes);
+router.use('/appointments', appointmentRoutes);
+router.use('/deals', dealRoutes);
+router.use('/follow-ups', followUpRoutes);
+router.use('/whatsapp', whatsappRoutes);
+router.use('/sheets', sheetsRoutes);
+router.use('/users', usersRoutes);
+router.use('/events', eventsRoutes);
+
+export default router;

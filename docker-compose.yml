@@ -1,0 +1,271 @@
+version: '3.9'
+
+# =============================================================================
+# شركة عبدالحكيم النقيدان للاستثمارات العقارية
+# Docker Compose - Production Configuration
+# =============================================================================
+
+networks:
+  naqidan-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  n8n_data:
+    driver: local
+  uploads_data:
+    driver: local
+  logs_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  evolution_data:
+    driver: local
+
+services:
+  # -----------------------------------------------------------------------
+  # PostgreSQL Database
+  # -----------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: naqidan-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-naqidan_realestate}
+      POSTGRES_USER: ${DB_USER:-naqidan_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/migrations:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+    networks:
+      - naqidan-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-naqidan_user} -d ${DB_NAME:-naqidan_realestate}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # -----------------------------------------------------------------------
+  # Redis Cache
+  # -----------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: naqidan-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+      --appendfsync everysec
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - naqidan-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # -----------------------------------------------------------------------
+  # Backend API
+  # -----------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: production
+    container_name: naqidan-backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DB_HOST: postgres
+      REDIS_HOST: redis
+    volumes:
+      - uploads_data:/app/uploads
+      - logs_data:/app/logs
+    ports:
+      - "3000:3000"
+    networks:
+      - naqidan-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # -----------------------------------------------------------------------
+  # Frontend Dashboard
+  # -----------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: production
+    container_name: naqidan-frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: ${APP_URL}/api
+      VITE_APP_NAME: ${APP_NAME}
+    ports:
+      - "80:80"
+    networks:
+      - naqidan-network
+    depends_on:
+      - backend
+
+  # -----------------------------------------------------------------------
+  # n8n Workflow Automation
+  # -----------------------------------------------------------------------
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: naqidan-n8n
+    restart: unless-stopped
+    environment:
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_HOST: 0.0.0.0
+      N8N_PORT: 5678
+      N8N_PROTOCOL: https
+      WEBHOOK_URL: ${N8N_WEBHOOK_URL}
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: n8n_db
+      DB_POSTGRESDB_USER: ${DB_USER}
+      DB_POSTGRESDB_PASSWORD: ${DB_PASSWORD}
+      EXECUTIONS_DATA_SAVE_ON_ERROR: all
+      EXECUTIONS_DATA_SAVE_ON_SUCCESS: all
+      EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS: "true"
+      N8N_LOG_LEVEL: info
+      N8N_METRICS: "true"
+      GENERIC_TIMEZONE: Asia/Riyadh
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n-workflows:/home/node/workflows:ro
+    ports:
+      - "5678:5678"
+    networks:
+      - naqidan-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # -----------------------------------------------------------------------
+  # Evolution API (WhatsApp)
+  # -----------------------------------------------------------------------
+  evolution-api:
+    image: atendai/evolution-api:v2.1.1
+    container_name: naqidan-evolution
+    restart: unless-stopped
+    environment:
+      SERVER_URL: ${EVOLUTION_API_URL:-http://evolution-api:8080}
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/evolution_db
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://:${REDIS_PASSWORD}@redis:6379/2
+      LOG_LEVEL: info
+      QRCODE_LIMIT: 30
+      WEBHOOK_GLOBAL_ENABLED: "true"
+      WEBHOOK_GLOBAL_URL: http://backend:3000/api/webhooks/whatsapp
+      WEBHOOK_GLOBAL_WEBHOOK_BY_EVENTS: "true"
+      CONFIG_SESSION_PHONE_CLIENT: Al-Naqidan
+      CONFIG_SESSION_PHONE_NAME: Chrome
+    volumes:
+      - evolution_data:/evolution/instances
+    ports:
+      - "8080:8080"
+    networks:
+      - naqidan-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # -----------------------------------------------------------------------
+  # Nginx Reverse Proxy
+  # -----------------------------------------------------------------------
+  nginx:
+    image: nginx:alpine
+    container_name: naqidan-nginx
+    restart: unless-stopped
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - logs_data:/var/log/nginx
+    ports:
+      - "443:443"
+    networks:
+      - naqidan-network
+    depends_on:
+      - backend
+      - frontend
+      - n8n
+
+  # -----------------------------------------------------------------------
+  # Prometheus Monitoring
+  # -----------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: naqidan-prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+    volumes:
+      - ./nginx/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - naqidan-network
+
+  # -----------------------------------------------------------------------
+  # Grafana Dashboard
+  # -----------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:latest
+    container_name: naqidan-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin123}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: ${APP_URL}/grafana
+      GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    networks:
+      - naqidan-network
+    depends_on:
+      - prometheus

@@ -1,0 +1,53 @@
+# Environment
+.env
+.env.local
+.env.production
+
+# Node
+node_modules/
+dist/
+build/
+
+# Logs
+logs/
+*.log
+
+# Database
+*.sql.gz
+backups/
+
+# Uploads
+uploads/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Docker
+docker-compose.override.yml
+
+# SSL Certificates
+nginx/ssl/
+
+# n8n data
+n8n-data/
+
+# Evolution API data
+evolution-api/instances/
+evolution-api/store/
+
+# PM2
+.pm2/
+
+# Temp
+*.tmp
+*.production.example
+
+backend/node_modules/
+frontend/node_modules/
+evolution-api/node_modules/

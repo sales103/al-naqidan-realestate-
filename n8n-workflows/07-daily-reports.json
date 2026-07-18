@@ -1,0 +1,76 @@
+{
+  "name": "07 - التقارير اليومية",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 8 * * *" }]
+        }
+      },
+      "id": "daily-trigger",
+      "name": "تشغيل يومي 8 صباحاً",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.BACKEND_URL }}/api/dashboard/stats",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "id": "get-stats",
+      "name": "جلب الإحصائيات",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json.data;\nconst today = new Date().toLocaleDateString('ar-SA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });\n\nconst report = `📊 *التقرير اليومي - ${today}*\n\n🏠 *العقارات:*\n• المتاح: ${data.properties?.available ?? 0} عقار\n• إجمالي: ${data.properties?.total ?? 0} عقار\n\n👥 *العملاء:*\n• جديد اليوم: ${data.clients?.new_today ?? 0}\n• إجمالي: ${data.clients?.total ?? 0}\n• محولون: ${data.clients?.closed_won ?? 0}\n\n💬 *المحادثات:*\n• رسائل اليوم: ${data.conversations?.total_messages_today ?? 0}\n• ردود الذكاء الاصطناعي: ${data.conversations?.ai_responses_today ?? 0}\n\n📈 *الصفقات:*\n• مكتملة: ${data.deals?.completed ?? 0}\n• إجمالي الإيرادات: ${(data.deals?.total_revenue ?? 0).toLocaleString('ar-SA')} ريال\n\n🎯 *معدل التحويل:* ${data.analytics?.conversion_rate ?? 0}%\n\nشركة النقيدان للاستثمارات العقارية 🏢`;\n\nreturn [{ json: { report, data } }];"
+      },
+      "id": "format-report",
+      "name": "تنسيق التقرير",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.EVOLUTION_API_URL }}/message/sendText/{{ $env.EVOLUTION_INSTANCE }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "apikey", "value": "={{ $env.EVOLUTION_API_KEY }}" }]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "number", "value": "={{ $env.ADMIN_WHATSAPP }}" },
+            { "name": "text", "value": "={{ $json.report }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-report",
+      "name": "إرسال التقرير للمدير",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [900, 300]
+    }
+  ],
+  "connections": {
+    "تشغيل يومي 8 صباحاً": {
+      "main": [[{ "node": "جلب الإحصائيات", "type": "main", "index": 0 }]]
+    },
+    "جلب الإحصائيات": {
+      "main": [[{ "node": "تنسيق التقرير", "type": "main", "index": 0 }]]
+    },
+    "تنسيق التقرير": {
+      "main": [[{ "node": "إرسال التقرير للمدير", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": [{ "name": "reports" }, { "name": "daily" }]
+}
