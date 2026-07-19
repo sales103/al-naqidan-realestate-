@@ -63,60 +63,41 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
             <div>
               <label className="label">البريد الإلكتروني</label>
-              <input
-                {...register('email')}
-                type="email"
-                placeholder="admin@naqidan.com"
-                className="input"
-                dir="ltr"
-              />
+              <input {...register('email')} type="email" placeholder="you@example.com" className="input" dir="ltr" />
               {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email.message}</p>}
             </div>
 
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="label mb-0">كلمة المرور</label>
-                <Link
-                  to="/forgot-password"
-                  className="text-xs text-blue-600 hover:text-blue-700 hover:underline"
-                >
+                <Link to="/forgot-password" className="text-xs text-blue-600 hover:text-blue-700 hover:underline">
                   نسيت كلمة المرور؟
                 </Link>
               </div>
               <div className="relative">
-                <input
-                  {...register('password')}
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="••••••••"
-                  className="input pl-10"
-                  dir="ltr"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
+                <input {...register('password')} type={showPassword ? 'text' : 'password'}
+                  placeholder="••••••••" className="input pl-10" dir="ltr" />
+                <button type="button" onClick={() => setShowPassword(!showPassword)}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                   {showPassword ? <EyeSlashIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
                 </button>
               </div>
               {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password.message}</p>}
             </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-colors duration-200 disabled:opacity-60 flex items-center justify-center gap-2"
-            >
+            <button type="submit" disabled={loading}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-colors duration-200 disabled:opacity-60 flex items-center justify-center gap-2">
               {loading ? (
-                <>
-                  <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                  جاري الدخول...
-                </>
+                <><svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>جاري الدخول...</>
               ) : 'تسجيل الدخول'}
             </button>
+
+            <div className="text-center pt-1">
+              <span className="text-gray-500 text-sm">موظف جديد؟ </span>
+              <Link to="/register" className="text-blue-600 hover:text-blue-700 text-sm font-medium">
+                إنشاء حساب
+              </Link>
+            </div>
           </form>
         </div>
 
