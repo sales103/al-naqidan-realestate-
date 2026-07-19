@@ -15,13 +15,42 @@ function generateOtp(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
+async function getCompanyName(): Promise<string> {
+  try {
+    const db = getDatabase();
+    const row = await db('system_settings').where('key', 'company').first();
+    return row?.value?.name_ar ?? 'نظام إدارة العقارات';
+  } catch { return 'نظام إدارة العقارات'; }
+}
+
+async function notifyAdmins(db: any, title: string, body: string): Promise<void> {
+  try {
+    const admins = await db('users')
+      .whereIn('role', ['super_admin', 'admin'])
+      .where('is_active', true)
+      .select('id');
+    if (!admins.length) return;
+    await db('notifications').insert(
+      admins.map((a: any) => ({
+        user_id: a.id,
+        notification_type: 'new_user_request',
+        title,
+        body,
+        read_at: null,
+        created_at: new Date(),
+      }))
+    );
+  } catch { /* non-critical */ }
+}
+
 async function sendOtpEmail(to: string, otp: string, name?: string) {
+  const companyName = await getCompanyName();
   const greeting = name ? `<p style="color:#374151;margin:0 0 20px;">مرحباً ${name}،</p>` : '';
   await sendMail(
     to,
     `رمز التحقق: ${otp}`,
     `<div dir="rtl" style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:32px;border:1px solid #e5e7eb;border-radius:16px;">
-      <h2 style="color:#1d4ed8;margin:0 0 8px;">النقيدان للعقارات</h2>
+      <h2 style="color:#1d4ed8;margin:0 0 8px;">${companyName}</h2>
       ${greeting}
       <p style="color:#374151;margin:0 0 24px;">رمز التحقق الخاص بك:</p>
       <div style="background:#f0f9ff;border:2px solid #bae6fd;border-radius:12px;padding:20px;text-align:center;margin-bottom:24px;">
@@ -29,7 +58,7 @@ async function sendOtpEmail(to: string, otp: string, name?: string) {
       </div>
       <p style="color:#6b7280;font-size:13px;">صالح لمدة 5 دقائق فقط. لا تشاركه مع أحد.</p>
       <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;" />
-      <p style="color:#9ca3af;font-size:12px;">شركة عبدالحكيم النقيدان للاستثمارات العقارية</p>
+      <p style="color:#9ca3af;font-size:12px;">${companyName}</p>
     </div>`
   );
 }
@@ -181,6 +210,12 @@ export const register = async (req: Request, res: Response, next: NextFunction):
     }).returning('*') as User[];
 
     await cacheDel(`verified:register:${verified_token}`);
+
+    // Notify all admins about the new registration request
+    await notifyAdmins(db,
+      'طلب انضمام جديد',
+      `${user.full_name_ar ?? user.full_name} (${email}) طلب الانضمام للنظام — في انتظار موافقتك`
+    );
 
     logger.info('New user registered (pending approval)', { userId: user.id, email: user.email });
     res.status(201).json({

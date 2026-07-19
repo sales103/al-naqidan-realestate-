@@ -100,7 +100,9 @@ export const notificationsApi = {
 };
 // --- Settings ---
 export const settingsApi = {
-  getAll: ()                          => api.get('/settings'),
-  get:    (key: string)               => api.get(`/settings/${key}`),
-  save:   (key: string, value: any)   => api.put(`/settings/${key}`, { value }),
+  getAll:     ()                        => api.get('/settings'),
+  get:        (key: string)             => api.get(`/settings/${key}`),
+  save:       (key: string, value: any) => api.put(`/settings/${key}`, { value }),
+  testEmail:  (to: string)              => api.post('/settings/test-email', { to }),
+  getCompany: ()                        => api.get('/settings/company'),
 };

@@ -1,7 +1,8 @@
 ﻿import { useEffect, useState } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from './store/auth.store.ts';
-import { api } from './services/api.ts';
+import { useCompanyStore } from './store/company.store.ts';
+import { api, settingsApi } from './services/api.ts';
 import Layout from './components/Layout/Layout.tsx';
 import LoginPage from './pages/LoginPage.tsx';
 import RegisterPage from './pages/RegisterPage.tsx';
@@ -27,14 +28,19 @@ function SetupGuard({ children }: { children: React.ReactNode }) {
   const [checking, setChecking] = useState(true);
   const navigate = useNavigate();
   const location = useLocation();
+  const setCompany = useCompanyStore(s => s.setCompany);
 
   useEffect(() => {
+    // Load company name for branding (non-blocking)
+    settingsApi.getCompany().then((res: any) => {
+      const c = res.data?.data;
+      if (c) setCompany({ name_ar: c.name_ar, name: c.name, phone: c.phone, address: c.address });
+    }).catch(() => {});
+
     if (location.pathname === '/setup') { setChecking(false); return; }
     api.get('/setup/status').then((res: any) => {
       if (!res.data?.completed) navigate('/setup', { replace: true });
-    }).catch(() => {
-      // If setup endpoint fails (e.g. old deploy), continue normally
-    }).finally(() => setChecking(false));
+    }).catch(() => {}).finally(() => setChecking(false));
   }, []);
 
   if (checking) return (
@@ -49,9 +55,9 @@ export default function App() {
   return (
     <SetupGuard>
       <Routes>
-        <Route path="/setup"          element={<SetupPage />} />
-        <Route path="/login"          element={<LoginPage />} />
-        <Route path="/register"       element={<RegisterPage />} />
+        <Route path="/setup"           element={<SetupPage />} />
+        <Route path="/login"           element={<LoginPage />} />
+        <Route path="/register"        element={<RegisterPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
           <Route index element={<Navigate to="/dashboard" replace />} />
