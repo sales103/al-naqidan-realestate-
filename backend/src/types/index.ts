@@ -1,4 +1,4 @@
-// =============================================================================
+﻿// =============================================================================
 // Core Type Definitions
 // =============================================================================
 
@@ -282,6 +282,7 @@ export interface AIExtractedData {
   special_requirements?: string[];
   client_name?: string;
   urgency?: 'low' | 'medium' | 'high';
+  sentiment?: 'positive' | 'neutral' | 'negative';
 }
 
 export interface AIProcessingResult {

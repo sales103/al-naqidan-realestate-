@@ -91,7 +91,7 @@ export class ConversationService {
       }
 
       // ── Level-1 buttons: new client welcome ──────────────────────────────
-      if (isNew) {
+            if (isNew) {
         const greeting = whatsappService.getRiyadhGreeting();
         await whatsappService.sendText(
           client.phone,
@@ -99,10 +99,10 @@ export class ConversationService {
         );
         await sleep(800);
         await whatsappService.sendButtons(client.phone, 'اختر نوع طلبك', 'حدّد ما تبحث عنه:', [
-          { id: 'btn_residential', text: '🏠 سكني' },
-          { id: 'btn_commercial', text: '🏢 تجاري' },
-          { id: 'btn_land', text: '📐 أرض' },
-          { id: 'btn_evaluation', text: '📊 تقييم عقار' },
+          { id: 'btn_residential', text: '🏘 سكني' },
+          { id: 'btn_commercial',  text: '🏢 تجاري' },
+          { id: 'btn_land',        text: '📍 أرض' },
+          { id: 'btn_evaluation',  text: '📊 تقييم عقار' },
         ]);
         return;
       }
@@ -112,7 +112,7 @@ export class ConversationService {
 
       if (clickedId === 'btn_residential') {
         await whatsappService.sendButtons(client.phone, 'نوع السكن', 'ما نوع الوحدة السكنية؟', [
-          { id: 'btn2_family', text: '👨‍👩‍👧 عوائل' },
+          { id: 'btn2_family', text: '👪 عوائل' },
           { id: 'btn2_single', text: '👤 عزاب' },
         ]);
         return;
@@ -130,9 +130,9 @@ export class ConversationService {
 
       if (clickedId === 'btn_land') {
         await whatsappService.sendButtons(client.phone, 'غرض الأرض', 'ما الغرض من الأرض؟', [
-          { id: 'btn2_land_res',   text: '🏘 سكني' },
-          { id: 'btn2_land_com',   text: '🏗 تجاري' },
-          { id: 'btn2_land_inv',   text: '💼 استثماري' },
+          { id: 'btn2_land_res', text: '🏘 سكني' },
+          { id: 'btn2_land_com', text: '🏭 تجاري' },
+          { id: 'btn2_land_inv', text: '💼 استثماري' },
         ]);
         return;
       }
@@ -148,15 +148,15 @@ export class ConversationService {
 
       // ── Level-2 clicks: save client profile then hand off to AI ──────────
       const L2_MAP: Record<string, { types: string[]; text: string }> = {
-        btn2_family:    { types: ['apartment', 'villa'],    text: 'أريد وحدة سكنية للعوائل' },
-        btn2_single:    { types: ['apartment'],             text: 'أريد وحدة سكنية للعزاب' },
-        btn2_shop:      { types: ['showroom'],              text: 'أريد محلاً تجارياً' },
-        btn2_hall:      { types: ['showroom'],              text: 'أريد صالة عرض أو صالة تجارية' },
-        btn2_office:    { types: ['office'],                text: 'أريد مكتباً' },
-        btn2_warehouse: { types: ['warehouse'],             text: 'أريد مستودعاً' },
-        btn2_land_res:  { types: ['land'],                  text: 'أريد أرضاً سكنية' },
-        btn2_land_com:  { types: ['land'],                  text: 'أريد أرضاً تجارية' },
-        btn2_land_inv:  { types: ['land'],                  text: 'أريد أرضاً للاستثمار' },
+        btn2_family:    { types: ['apartment', 'villa'], text: 'أريد وحدة سكنية للعوائل' },
+        btn2_single:    { types: ['apartment'],          text: 'أريد وحدة سكنية للعزاب' },
+        btn2_shop:      { types: ['showroom'],           text: 'أريد محلاً تجارياً' },
+        btn2_hall:      { types: ['showroom'],           text: 'أريد صالة عرض أو صالة تجارية' },
+        btn2_office:    { types: ['office'],             text: 'أريد مكتباً' },
+        btn2_warehouse: { types: ['warehouse'],          text: 'أريد مستودعاً' },
+        btn2_land_res:  { types: ['land'],               text: 'أريد أرضاً سكنية' },
+        btn2_land_com:  { types: ['land'],               text: 'أريد أرضاً تجارية' },
+        btn2_land_inv:  { types: ['land'],               text: 'أريد أرضاً للاستثمار' },
       };
 
       if (clickedId && L2_MAP[clickedId]) {

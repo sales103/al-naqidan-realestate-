@@ -1,85 +1,60 @@
-import OpenAI from 'openai';
-import fs from 'fs';
-import path from 'path';
-import { config } from '../config/index.js';
+﻿import OpenAI from 'openai';
+import { getDatabase } from '../database/connection.js';
+import { cacheGet, cacheSet } from '../database/redis.js';
 import { logger } from '../config/logger.js';
-import { cacheGet, cacheSet, cacheKeys } from '../database/redis.js';
+import { config } from '../config/index.js';
 import type {
-  AIProcessingResult,
-  AIIntent,
-  AIExtractedData,
-  Message,
-  Client,
-  Property,
-  PropertySearchParams,
+  AIProcessingResult, AIIntent, AIExtractedData,
+  Message, Client, Property, PropertySearchParams,
 } from '../types/index.js';
+
+// =============================================================================
+// OpenAI / Groq Client (same OpenAI-compatible API)
+// =============================================================================
 
 const openai = new OpenAI({
   apiKey: config.openai.apiKey,
   ...(config.openai.baseUrl ? { baseURL: config.openai.baseUrl } : {}),
 });
 
-// Load system prompt - works with both CommonJS and compiled output
-let systemPrompt = '';
-try {
-  const promptPaths = [
-    path.resolve(process.cwd(), 'ai/prompts/system_prompt.txt'),
-    path.resolve(process.cwd(), '../ai/prompts/system_prompt.txt'),
-    path.resolve(__dirname, '../../ai/prompts/system_prompt.txt'),
-  ];
-  for (const p of promptPaths) {
-    if (fs.existsSync(p)) { systemPrompt = fs.readFileSync(p, 'utf-8'); break; }
-  }
-} catch { systemPrompt = 'أنت مساعد عقاري ذكي لشركة النقيدان.'; }
+const isGroq = config.openai.baseUrl?.includes('groq.com') ?? false;
 
 // =============================================================================
-// Intent Classification
+// System Prompt — Professional Saudi Real Estate AI
 // =============================================================================
 
-const INTENT_EXTRACTION_PROMPT = `
-أنت محلل نصوص متخصص في العقارات السعودية. حلل الرسالة التالية واستخرج:
-1. النية الرئيسية (intent)
-2. البيانات المهمة (entities)
+const SYSTEM_PROMPT = `انت "نقيدان" — مستشار عقاري ذكي لشركة عبدالحكيم النقيدان للاستثمارات العقارية في الرياض.
 
-النوايا الممكنة:
-- search_property: يبحث عن عقار
-- property_details: يريد تفاصيل عقار معين
-- price_inquiry: يسأل عن السعر
-- appointment_request: يريد تحديد موعد
-- location_inquiry: يسأل عن الموقع
-- greeting: تحية أو مجاملة
-- complaint: شكوى أو مشكلة
-- human_agent_request: يطلب التحدث مع موظف
-- general_inquiry: سؤال عام
-- feedback: رأي أو تقييم
-- unknown: غير محدد
+## شخصيتك
+- محترف وودود في آن — كمستشار عقاري خبير لديه 15 سنة تجربة
+- تتحدث بالعربية الفصحى البسيطة أو العامية السعودية حسب أسلوب العميل
+- ردودك مختصرة وواضحة (3-5 جمل كحد أقصى ما لم يطلب تفصيلاً)
+- تستخدم إيموجي باعتدال 🏠
+- لا تكرر نفسك، لا تقل "بالطبع" أو "حسناً" في بداية كل جملة
+- أسلوبك راقٍ وحازم — مثل مستشار لا مندوب مبيعات
 
-البيانات المطلوب استخراجها:
-- property_type: نوع العقار (land/apartment/villa/building/office/showroom/warehouse/farm/investment_project)
-- city: المدينة
-- district: الحي
-- direction: الاتجاه (شمال/جنوب/شرق/غرب/وسط)
-- budget_max: الحد الأقصى للميزانية (رقم بالريال)
-- budget_min: الحد الأدنى للميزانية (رقم بالريال)
-- area_min: المساحة الدنيا بالمتر المربع
-- area_max: المساحة القصوى بالمتر المربع
-- rooms: عدد الغرف
-- purpose: الغرض (sale/rent)
-- special_requirements: متطلبات خاصة (مصفوفة نصية)
-- client_name: اسم العميل إن ذُكر
-- urgency: مدى الإلحاح (low/medium/high)
+## مهامك
+1. **فهم حاجة العميل** — اسأل سؤالاً واحداً فقط لتوضيح الطلب
+2. **عرض العقارات** — إذا وُجدت عقارات في السياق، اعرضها بتفاصيلها الحقيقية
+3. **جمع البيانات تدريجياً** — النوع → المنطقة → الميزانية → الغرف
+4. **التحويل للموظف** — عند الجاهزية للشراء أو الشكاوى أو التفاوض
 
-أجب بـ JSON فقط بدون أي نص إضافي:
-{
-  "intent": { "primary": "...", "secondary": "...", "confidence": 0.0-1.0 },
-  "extracted_data": { ... },
-  "sentiment": "positive|neutral|negative",
-  "language": "ar|en|mixed"
-}
-`;
+## صيغة عرض العقار (إلزامية)
+🏠 *[الاسم]*
+📍 [الحي] - [المدينة]
+💰 [السعر] ريال
+📐 [المساحة] م² | 🛏 [الغرف] غرفة
+📋 الكود: [الكود]
+
+## قواعد صارمة
+- لا تذكر أسعاراً خيالية — فقط من العقارات الموجودة في السياق
+- لا ترسل أكثر من 3 عقارات في رسالة واحدة
+- إذا لم تجد عقاراً مناسباً: "لا يوجد حالياً ما يناسب طلبك تماماً، سأبلغ فريق المبيعات لمتابعتك"
+- لا تعد بأشياء خارج صلاحياتك
+- ساعات العمل: صباحاً 9:30-12:00 | مساءً 4:00-9:30 | إجازة الجمعة`;
 
 // =============================================================================
-// Main AI Processing Function
+// Main Processing — Single API Call (Intent + Response combined)
 // =============================================================================
 
 export const processMessage = async (
@@ -91,166 +66,133 @@ export const processMessage = async (
   const startTime = Date.now();
 
   try {
-    // Step 1: Extract intent and entities
-    const { intent, extracted_data, sentiment, language, intentTokens } =
-      await extractIntentAndEntities(messageContent);
-
-    // Step 2: Build conversation context for response generation
     const historyMessages = buildConversationHistory(conversationHistory);
+    const contextBlock = buildContextBlock(client, availableProperties);
 
-    // Step 3: Build context about client and properties
-    const contextMessage = buildContextMessage(client, availableProperties);
+    // Single call: extract intent + generate response simultaneously
+    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+      { role: 'system', content: SYSTEM_PROMPT + '\n\n' + contextBlock },
+      ...historyMessages,
+      {
+        role: 'user',
+        content: messageContent + '\n\n[SYSTEM: في نهاية ردك أضف سطراً بهذا الشكل بالضبط:\nJSON:{"intent":"search_property|property_details|price_inquiry|appointment_request|greeting|complaint|human_agent_request|general_inquiry|unknown","budget_max":null,"budget_min":null,"property_type":null,"city":null,"district":null,"rooms":null,"purpose":null,"client_name":null,"urgency":"low|medium|high","sentiment":"positive|neutral|negative"}]',
+      },
+    ];
 
-    // Step 4: Generate response
-    const { response, responseTokens } = await generateResponse(
-      messageContent,
-      historyMessages,
-      contextMessage,
-      intent,
-      extracted_data,
-      client
-    );
+    const completion = await openai.chat.completions.create({
+      model: config.openai.model,
+      messages,
+      temperature: config.openai.temperature ?? 0.7,
+      max_tokens: config.openai.maxTokens ?? 600,
+    });
 
-    // Step 5: Determine if properties should be sent
+    const rawOutput = completion.choices[0]?.message?.content ?? '';
+    const { response, intent, extracted_data } = parseAIOutput(rawOutput, messageContent);
+
+    // Determine actions
     const shouldSendProperties =
-      (intent.primary === 'search_property' || intent.primary === 'price_inquiry') &&
+      ['search_property', 'price_inquiry'].includes(intent.primary) &&
       (availableProperties?.length ?? 0) > 0;
 
-    // Step 6: Build search params if needed
-    const property_search_params = buildSearchParams(extracted_data);
-
-    // Step 7: Determine escalation
     const { shouldEscalate, escalationReason } = determineEscalation(intent, client, messageContent);
 
-    const totalTokens = intentTokens + responseTokens;
-    const cost = calculateCost(totalTokens, config.openai.model);
+    const tokens = completion.usage?.total_tokens ?? 0;
 
     return {
       intent,
       extracted_data,
       response,
       should_send_properties: shouldSendProperties,
-      property_search_params: shouldSendProperties ? property_search_params : undefined,
+      property_search_params: shouldSendProperties ? buildSearchParams(extracted_data) : undefined,
       should_escalate: shouldEscalate,
       escalation_reason: escalationReason,
-      sentiment,
-      language,
-      tokens_used: totalTokens,
+      sentiment: extracted_data.sentiment ?? 'neutral',
+      language: 'ar',
+      tokens_used: tokens,
       model: config.openai.model,
       response_time_ms: Date.now() - startTime,
-      cost_usd: cost,
+      cost_usd: calculateCost(tokens, config.openai.model),
     };
   } catch (error) {
-    logger.error('AI processing error', { error, messageContent: messageContent.substring(0, 100) });
+    logger.error('AI processing error', { error, msg: messageContent.substring(0, 100) });
     throw error;
   }
 };
 
 // =============================================================================
-// Intent Extraction
+// Parse AI Output (response + JSON intent in one call)
 // =============================================================================
 
-export const extractIntentAndEntities = async (
-  messageContent: string
-): Promise<{
-  intent: AIIntent;
-  extracted_data: AIExtractedData;
-  sentiment: 'positive' | 'neutral' | 'negative';
-  language: 'ar' | 'en' | 'mixed';
-  intentTokens: number;
-}> => {
-  // Check cache
-  const cacheKey = `intent:${Buffer.from(messageContent).toString('base64').substring(0, 40)}`;
-  const cached = await cacheGet<ReturnType<typeof extractIntentAndEntities>>(cacheKey);
-  if (cached) return cached;
+const parseAIOutput = (
+  raw: string,
+  originalMessage: string
+): { response: string; intent: AIIntent; extracted_data: AIExtractedData } => {
+  // Split on JSON: marker
+  const jsonMarker = raw.lastIndexOf('\nJSON:');
+  let response = raw;
+  let jsonStr = '{}';
 
-  const response = await openai.chat.completions.create({
-    model: config.openai.model,
-    messages: [
-      { role: 'system', content: INTENT_EXTRACTION_PROMPT + '\nأجب بـ JSON فقط بدون أي نص آخر.' },
-      { role: 'user', content: messageContent },
-    ],
-    temperature: 0.1,
-    max_tokens: 500,
-  });
+  if (jsonMarker !== -1) {
+    response = raw.substring(0, jsonMarker).trim();
+    jsonStr = raw.substring(jsonMarker + 6).trim();
+  }
 
-  const rawContent = response.choices[0]?.message?.content ?? '{}';
-  // Extract JSON from response (model may wrap it in markdown)
-  const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
-  const content = jsonMatch ? jsonMatch[0] : '{}';
-  let parsed: { intent: AIIntent; extracted_data: AIExtractedData; sentiment: 'positive' | 'neutral' | 'negative'; language: 'ar' | 'en' | 'mixed'; };
-  try { parsed = JSON.parse(content); } catch { parsed = {} as any; }
+  let parsed: any = {};
+  try {
+    // Clean markdown if model wrapped it
+    const clean = jsonStr.replace(/```json?|```/g, '').trim();
+    const match = clean.match(/\{[\s\S]*\}/);
+    if (match) parsed = JSON.parse(match[0]);
+  } catch { /* use defaults */ }
 
-  const result = {
-    intent: parsed.intent ?? { primary: 'unknown', confidence: 0.5 },
-    extracted_data: parsed.extracted_data ?? {},
+  const intent: AIIntent = {
+    primary: parsed.intent ?? 'general_inquiry',
+    confidence: parsed.intent ? 0.9 : 0.5,
+  };
+
+  const extracted_data: AIExtractedData = {
+    property_type: parsed.property_type ?? undefined,
+    city: parsed.city ?? undefined,
+    district: parsed.district ?? undefined,
+    budget_max: parsed.budget_max ?? undefined,
+    budget_min: parsed.budget_min ?? undefined,
+    rooms: parsed.rooms ?? undefined,
+    purpose: parsed.purpose ?? undefined,
+    client_name: parsed.client_name ?? undefined,
+    urgency: parsed.urgency ?? 'low',
     sentiment: parsed.sentiment ?? 'neutral',
-    language: parsed.language ?? 'ar',
-    intentTokens: response.usage?.total_tokens ?? 0,
+    special_requirements: undefined,
   };
 
-  await cacheSet(cacheKey, result, 300); // cache 5 min
-  return result;
+  return { response: response || 'عذراً، لم أفهم الرسالة. هل يمكنك توضيح طلبك؟', intent, extracted_data };
 };
 
 // =============================================================================
-// Response Generation
-// =============================================================================
-
-export const generateResponse = async (
-  userMessage: string,
-  historyMessages: OpenAI.Chat.ChatCompletionMessageParam[],
-  contextMessage: string,
-  intent: AIIntent,
-  extracted_data: AIExtractedData,
-  client: Client
-): Promise<{ response: string; responseTokens: number }> => {
-  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-    {
-      role: 'system',
-      content: systemPrompt + '\n\n' + contextMessage,
-    },
-    ...historyMessages,
-    {
-      role: 'user',
-      content: userMessage,
-    },
-  ];
-
-  const response = await openai.chat.completions.create({
-    model: config.openai.model,
-    messages,
-    temperature: config.openai.temperature,
-    max_tokens: config.openai.maxTokens,
-  });
-
-  return {
-    response: response.choices[0]?.message?.content ?? 'عذراً، حدث خطأ. يرجى المحاولة مرة أخرى.',
-    responseTokens: response.usage?.total_tokens ?? 0,
-  };
-};
-
-// =============================================================================
-// Voice Transcription
+// Audio Transcription
 // =============================================================================
 
 export const transcribeAudio = async (audioBuffer: Buffer, mimeType: string): Promise<string> => {
-  try {
+  if (isGroq) {
+    // Groq uses same Whisper API
     const ext = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('mp4') ? 'mp4' : 'wav';
     const file = new File([audioBuffer], `audio.${ext}`, { type: mimeType });
-
     const transcription = await openai.audio.transcriptions.create({
       file,
-      model: config.openai.whisperModel,
+      model: 'whisper-large-v3',
       language: 'ar',
       response_format: 'text',
     });
-
     return typeof transcription === 'string' ? transcription : (transcription as any).text ?? '';
-  } catch (error) {
-    logger.error('Audio transcription error', { error });
-    throw error;
   }
+  const ext = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('mp4') ? 'mp4' : 'wav';
+  const file = new File([audioBuffer], `audio.${ext}`, { type: mimeType });
+  const transcription = await openai.audio.transcriptions.create({
+    file,
+    model: config.openai.whisperModel ?? 'whisper-1',
+    language: 'ar',
+    response_format: 'text',
+  });
+  return typeof transcription === 'string' ? transcription : (transcription as any).text ?? '';
 };
 
 // =============================================================================
@@ -259,143 +201,94 @@ export const transcribeAudio = async (audioBuffer: Buffer, mimeType: string): Pr
 
 export const analyzeImage = async (imageUrl: string, caption?: string): Promise<string> => {
   try {
+    const visionModel = isGroq ? 'meta-llama/llama-4-scout-17b-16e-instruct' : (config.openai.visionModel ?? config.openai.model);
     const response = await openai.chat.completions.create({
-      model: config.openai.visionModel,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image_url',
-              image_url: { url: imageUrl, detail: 'auto' },
-            },
-            {
-              type: 'text',
-              text: caption
-                ? `وصف هذه الصورة في سياق عقاري. التعليق: ${caption}`
-                : 'وصف هذه الصورة في سياق عقاري.',
-            },
-          ],
-        },
-      ],
-      max_tokens: 500,
+      model: visionModel,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image_url', image_url: { url: imageUrl, detail: 'auto' } },
+          { type: 'text', text: caption ? `صف هذه الصورة في سياق عقاري. التعليق: ${caption}` : 'صف هذه الصورة في سياق عقاري.' },
+        ],
+      }],
+      max_tokens: 300,
     });
-
     return response.choices[0]?.message?.content ?? 'لم أتمكن من تحليل الصورة';
-  } catch (error) {
-    logger.error('Image analysis error', { error });
-    return 'لم أتمكن من تحليل الصورة في الوقت الحالي';
+  } catch {
+    return 'صورة';
   }
 };
 
 // =============================================================================
-// Property Response Formatter
+// Property Formatter (WhatsApp)
 // =============================================================================
 
 export const formatPropertyMessage = (property: Property, index: number): string => {
-  const typeAr = {
-    land: 'أرض',
-    apartment: 'شقة',
-    villa: 'فيلا',
-    building: 'عمارة',
-    office: 'مكتب',
-    showroom: 'معرض',
-    warehouse: 'مستودع',
-    farm: 'مزرعة',
-    investment_project: 'مشروع استثماري',
-    other: 'عقار',
-  }[property.property_type] ?? 'عقار';
+  const typeAr: Record<string, string> = {
+    land: 'أرض', apartment: 'شقة', villa: 'فيلا', building: 'عمارة',
+    office: 'مكتب', showroom: 'معرض', warehouse: 'مستودع', farm: 'مزرعة',
+    investment_project: 'مشروع استثماري', other: 'عقار',
+  };
+  const type = typeAr[property.property_type ?? ''] ?? 'عقار';
+  const location = [property.district_name, property.city_name].filter(Boolean).join(' - ');
+  const price = property.price ? `💰 *${property.price.toLocaleString('ar-SA')} ريال*` : '';
+  const area = property.area_sqm ? `📐 ${property.area_sqm.toLocaleString()} م²` : '';
+  const rooms = property.rooms ? ` | 🛏 ${property.rooms} غرفة` : '';
+  const features = (property.features ?? []).slice(0, 2).join(' • ');
 
-  const price = property.price
-    ? `💰 *${property.price.toLocaleString('ar-SA')} ريال*`
-    : '';
-
-  const area = property.area_sqm
-    ? `📐 المساحة: ${property.area_sqm.toLocaleString('ar-SA')} م²`
-    : '';
-
-  const rooms = property.rooms ? `🛏 الغرف: ${property.rooms}` : '';
-
-  const location = [property.district_name, property.city_name]
-    .filter(Boolean)
-    .join(' - ');
-
-  const features = (property.features ?? []).slice(0, 3).join(' • ');
-
-  return `*${index}. ${typeAr} - ${property.title_ar ?? property.title}*
+  return `*${index}. ${type} — ${property.title_ar ?? property.title}*
 📍 ${location}
-${area}${rooms ? '\n' + rooms : ''}
+${area}${rooms}
 ${price}${features ? '\n✨ ' + features : ''}
-🔗 الكود: ${property.code}`;
+📋 الكود: *${property.code}*`;
 };
 
-export const formatPropertiesResponse = (
-  properties: Property[],
-  searchSummary: string
-): string => {
-  if (properties.length === 0) {
-    return `عذراً، لم أجد عقارات تطابق ${searchSummary} حالياً.\n\nسأبلغ فريق المبيعات لمساعدتك في إيجاد أفضل الخيارات المتاحة. 🤝`;
+export const formatPropertiesResponse = (properties: Property[], searchSummary: string): string => {
+  if (!properties.length) {
+    return `لا يوجد حالياً عقار يناسب ${searchSummary}.\n\nسأبلغ فريق المبيعات لمتابعتك بأقرب فرصة. 🤝`;
   }
-
-  const header = `وجدت لك ${properties.length} ${properties.length === 1 ? 'عقار' : 'عقارات'} مناسبة:\n\n`;
-  const propertyList = properties
-    .slice(0, 3)
-    .map((p, i) => formatPropertyMessage(p, i + 1))
-    .join('\n\n─────────────\n\n');
-
-  const footer = properties.length > 3
-    ? `\n\n📌 هل تريد مشاهدة المزيد من العقارات؟`
-    : '\n\n💬 هل تريد تفاصيل إضافية عن أي من هذه العقارات؟';
-
-  return header + propertyList + footer;
+  const list = properties.slice(0, 3).map((p, i) => formatPropertyMessage(p, i + 1)).join('\n\n─────────────\n\n');
+  const footer = properties.length > 3 ? `\n\n📌 هل تريد مشاهدة المزيد؟` : '\n\n💬 هل تريد تفاصيل أو موعد معاينة لأي منها؟';
+  return `وجدت ${properties.length} عقار${properties.length > 1 ? 'ات' : ''} مناسبة:\n\n` + list + footer;
 };
 
 // =============================================================================
 // Helper Functions
 // =============================================================================
 
-const buildConversationHistory = (messages: Message[]): OpenAI.Chat.ChatCompletionMessageParam[] => {
-  return messages
-    .slice(-10) // last 10 messages for context
-    .map((msg) => ({
-      role: msg.direction === 'inbound' ? ('user' as const) : ('assistant' as const),
-      content: msg.transcription ?? msg.content ?? '[رسالة وسائط]',
-    }));
-};
+const buildConversationHistory = (messages: Message[]): OpenAI.Chat.ChatCompletionMessageParam[] =>
+  messages.slice(-12).map((msg) => ({
+    role: msg.direction === 'inbound' ? ('user' as const) : ('assistant' as const),
+    content: msg.transcription ?? msg.content ?? '[رسالة وسائط]',
+  }));
 
-const buildContextMessage = (client: Client, properties?: Property[]): string => {
-  // Riyadh time context
-  const utc = Date.now() + new Date().getTimezoneOffset() * 60000;
-  const riyadhNow = new Date(utc + 3 * 3600000);
-  const riyadhHour = riyadhNow.getHours();
-  const greeting = riyadhHour >= 5 && riyadhHour < 12 ? 'صباح الخير ☀️'
-    : riyadhHour >= 12 && riyadhHour < 17 ? 'مساء الخير 🌤️'
-    : riyadhHour >= 17 && riyadhHour < 22 ? 'مساء النور 🌙'
-    : 'أهلاً بك 👋';
-  const timeCtx = `وقت الرياض الحالي: ` + riyadhNow.toLocaleTimeString('ar-SA') + ` — استخدم: ` + greeting;
+const buildContextBlock = (client: Client, properties?: Property[]): string => {
+  const now = new Date(Date.now() + 3 * 3600000); // Riyadh time
+  const h = now.getHours();
+  const greeting = h < 12 ? 'صباح الخير ☀️' : h < 17 ? 'مساء الخير 🌤️' : 'مساء النور 🌙';
 
-  const clientInfo = `
+  let ctx = `[السياق — وقت الرياض: ${now.toLocaleTimeString('ar-SA')} — ${greeting}]
+
 معلومات العميل:
 - الاسم: ${client.full_name}
-- حالته: ${client.status}
-- تاريخ أول تواصل: ${client.first_contact_at?.toLocaleDateString('ar-SA') ?? 'جديد'}
-${client.budget_max ? `- ميزانيته القصوى: ${client.budget_max.toLocaleString('ar-SA')} ريال` : ''}
-${client.preferred_property_types?.length ? `- يبحث عن: ${client.preferred_property_types.join(', ')}` : ''}
-${client.special_requirements ? `- متطلبات خاصة: ${client.special_requirements}` : ''}
-`;
+- الحالة: ${client.status}
+- أول تواصل: ${client.first_contact_at ? new Date(client.first_contact_at).toLocaleDateString('ar-SA') : 'جديد'}`;
 
-  const propertiesInfo = properties?.length
-    ? `\nعقارات متاحة ومطابقة (اذكر تفاصيلها في ردك):\n${properties.slice(0, 5).map((p, i) => {
-        const typeMap: Record<string, string> = { land:'أرض', apartment:'شقة', villa:'فيلا', building:'عمارة', office:'مكتب', showroom:'معرض', warehouse:'مستودع', farm:'مزرعة', investment_project:'مشروع استثماري', other:'أخرى' };
-        const type = typeMap[p.property_type ?? ''] ?? 'عقار';
-        const location = [p.district_name, p.city_name].filter(Boolean).join(' - ');
-        const area = p.area_sqm ? ` | ${p.area_sqm} م²` : '';
-        const rooms = p.rooms ? ` | ${p.rooms} غرف` : '';
-        return `${i+1}. ${type}: ${p.title_ar ?? p.title} | 💰 ${p.price?.toLocaleString('ar-SA')} ريال${area}${rooms} | 📍 ${location} | كود: ${p.code}`;
-      }).join('\n')}\n\nمهم: ضمّن تفاصيل هذه العقارات في ردك بشكل طبيعي ومنظّم.`
-    : '';
+  if ((client as any).budget_max) ctx += `\n- الميزانية القصوى: ${Number((client as any).budget_max).toLocaleString('ar-SA')} ريال`;
+  if ((client as any).preferred_property_types?.length) ctx += `\n- يبحث عن: ${(client as any).preferred_property_types.join(', ')}`;
+  if ((client as any).special_requirements) ctx += `\n- متطلبات خاصة: ${(client as any).special_requirements}`;
 
-  return timeCtx + '\n' + clientInfo + propertiesInfo;
+  if (properties?.length) {
+    ctx += `\n\nعقارات متاحة ومطابقة في قاعدة البيانات (اذكر تفاصيلها في ردك):\n`;
+    ctx += properties.slice(0, 5).map((p, i) => {
+      const typeAr: Record<string, string> = { land:'أرض', apartment:'شقة', villa:'فيلا', building:'عمارة', office:'مكتب', showroom:'معرض', warehouse:'مستودع', farm:'مزرعة', investment_project:'مشروع استثماري', other:'أخرى' };
+      const loc = [p.district_name, p.city_name].filter(Boolean).join(' - ');
+      return `${i+1}. ${typeAr[p.property_type??'']??'عقار'}: ${p.title_ar??p.title} | 💰 ${p.price?.toLocaleString('ar-SA')} ريال | 📐 ${p.area_sqm??'؟'} م² | 🛏 ${p.rooms??'؟'} | 📍 ${loc} | كود: ${p.code}`;
+    }).join('\n');
+    ctx += '\n\nمهم: اعرض هذه العقارات بالصيغة المطلوبة في ردك.';
+  }
+
+  return ctx;
 };
 
 const buildSearchParams = (data: AIExtractedData): PropertySearchParams => ({
@@ -415,28 +308,22 @@ const determineEscalation = (
   client: Client,
   message: string
 ): { shouldEscalate: boolean; escalationReason?: string } => {
-  if (intent.primary === 'human_agent_request') {
-    return { shouldEscalate: true, escalationReason: 'طلب العميل التحدث مع موظف' };
-  }
-  if (intent.primary === 'complaint') {
-    return { shouldEscalate: true, escalationReason: 'شكوى من العميل' };
-  }
-  if (client.status === 'negotiating' || client.status === 'contract_pending') {
-    return { shouldEscalate: true, escalationReason: 'عميل في مرحلة التفاوض' };
-  }
-  const urgentKeywords = ['الآن', 'فوراً', 'عاجل', 'ضروري', 'هام جداً'];
-  if (urgentKeywords.some((kw) => message.includes(kw))) {
-    return { shouldEscalate: true, escalationReason: 'طلب عاجل' };
-  }
+  if (intent.primary === 'human_agent_request') return { shouldEscalate: true, escalationReason: 'طلب العميل التحدث مع موظف' };
+  if (intent.primary === 'complaint') return { shouldEscalate: true, escalationReason: 'شكوى من العميل' };
+  if (['negotiating', 'contract_pending'].includes(client.status)) return { shouldEscalate: true, escalationReason: 'عميل في مرحلة التفاوض' };
+  if (['الآن', 'فوراً', 'عاجل', 'ضروري', 'هام جداً'].some(kw => message.includes(kw))) return { shouldEscalate: true, escalationReason: 'طلب عاجل' };
   return { shouldEscalate: false };
 };
 
 const calculateCost = (tokens: number, model: string): number => {
-  const rates: Record<string, { input: number; output: number }> = {
-    'gpt-4o': { input: 0.005, output: 0.015 },
-    'gpt-4o-mini': { input: 0.00015, output: 0.0006 },
-    'gpt-4-turbo': { input: 0.01, output: 0.03 },
+  const rates: Record<string, number> = {
+    'gpt-4o': 0.005, 'gpt-4o-mini': 0.00015, 'gpt-4-turbo': 0.01,
+    'llama-3.3-70b-versatile': 0.00059, 'llama-3.1-8b-instant': 0.00005,
+    'mixtral-8x7b-32768': 0.00024, 'gemma2-9b-it': 0.0002,
   };
-  const rate = rates[model] ?? rates['gpt-4o']!;
-  return (tokens / 1000) * ((rate!.input + rate!.output) / 2);
+  return (tokens / 1000) * (rates[model] ?? 0.001);
+};
+
+export const extractIntentAndEntities = async (msg: string) => {
+  return { intent: { primary: 'general_inquiry', confidence: 0.7 }, extracted_data: {}, sentiment: 'neutral' as const, language: 'ar' as const, intentTokens: 0 };
 };
