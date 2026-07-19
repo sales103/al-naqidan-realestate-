@@ -82,12 +82,16 @@ export class ConversationService {
       // Send quick reply buttons for new clients (first message)
       if (isNew) {
         const greeting = whatsappService.getRiyadhGreeting();
-        await whatsappService.sendText(client.phone, `\\nmكتب عبدالحكيم النقيدان العقاري في خدمتك 🏠`);
-        await whatsappService.sendButtons(client.phone, 'كيف يمكنني مساعدتك؟', 'اختر نوع طلبك:', [
-          { id: 'residential', text: '🏠 سكني' },
-          { id: 'commercial', text: '🏢 تجاري' },
-          { id: 'land', text: '📐 أرض' },
-          { id: 'evaluation', text: '📊 تقييم عقار' },
+        await whatsappService.sendText(
+          client.phone,
+          `${greeting} 🏠\nأهلاً بك في مكتب عبدالحكيم النقيدان للاستثمارات العقارية\nكيف يمكنني مساعدتك؟`
+        );
+        await new Promise((r) => setTimeout(r, 800));
+        await whatsappService.sendButtons(client.phone, 'اختر نوع طلبك', 'حدّد ما تبحث عنه:', [
+          { id: 'btn_residential', text: '🏠 سكني' },
+          { id: 'btn_commercial', text: '🏢 تجاري' },
+          { id: 'btn_land', text: '📐 أرض' },
+          { id: 'btn_evaluation', text: '📊 تقييم عقار' },
         ]);
         return;
       }
@@ -325,6 +329,41 @@ export class ConversationService {
 
     if (msg.conversation) return { content: msg.conversation, messageType: 'text' };
     if (msg.extendedTextMessage) return { content: msg.extendedTextMessage.text, messageType: 'text' };
+
+    // Button click responses — translate button ID to Arabic text for AI processing
+    if (msg.buttonsResponseMessage) {
+      const id = msg.buttonsResponseMessage.selectedButtonId ?? '';
+      const text = msg.buttonsResponseMessage.selectedDisplayText ?? id;
+      const mapped: Record<string, string> = {
+        btn_residential: 'أريد عقاراً سكنياً',
+        btn_commercial:  'أريد عقاراً تجارياً',
+        btn_land:        'أريد أرضاً للبيع أو الاستثمار',
+        btn_evaluation:  'أريد تقييم عقار',
+      };
+      return { content: mapped[id] ?? text, messageType: 'text' };
+    }
+    if (msg.templateButtonReplyMessage) {
+      const id = msg.templateButtonReplyMessage.selectedId ?? '';
+      const mapped: Record<string, string> = {
+        btn_residential: 'أريد عقاراً سكنياً',
+        btn_commercial:  'أريد عقاراً تجارياً',
+        btn_land:        'أريد أرضاً للبيع أو الاستثمار',
+        btn_evaluation:  'أريد تقييم عقار',
+      };
+      return { content: mapped[id] ?? (msg.templateButtonReplyMessage.selectedDisplayText ?? id), messageType: 'text' };
+    }
+    // List reply (when buttons fall back to numbered list and user replies with number)
+    if (msg.listResponseMessage) {
+      const rowId = msg.listResponseMessage.singleSelectReply?.selectedRowId ?? '';
+      const mapped: Record<string, string> = {
+        btn_residential: 'أريد عقاراً سكنياً',
+        btn_commercial:  'أريد عقاراً تجارياً',
+        btn_land:        'أريد أرضاً للبيع أو الاستثمار',
+        btn_evaluation:  'أريد تقييم عقار',
+      };
+      return { content: mapped[rowId] ?? (msg.listResponseMessage.title ?? rowId), messageType: 'text' };
+    }
+
     if (msg.imageMessage) return { content: msg.imageMessage.caption, mediaUrl: msg.imageMessage.url, mimeType: msg.imageMessage.mimetype, messageType: 'image' };
     if (msg.videoMessage) return { content: msg.videoMessage.caption, mediaUrl: msg.videoMessage.url, mimeType: msg.videoMessage.mimetype, messageType: 'video' };
     if (msg.audioMessage) return { mediaUrl: msg.audioMessage.url, mimeType: msg.audioMessage.mimetype, messageType: 'audio' };

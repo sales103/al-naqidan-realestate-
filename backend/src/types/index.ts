@@ -356,6 +356,9 @@ export interface WhatsAppMessageData {
     documentMessage?: { url?: string; mimetype?: string; title?: string };
     locationMessage?: { degreesLatitude?: number; degreesLongitude?: number; name?: string };
     stickerMessage?: { url?: string };
+    buttonsResponseMessage?: { selectedButtonId?: string; selectedDisplayText?: string };
+    templateButtonReplyMessage?: { selectedId?: string; selectedDisplayText?: string };
+    listResponseMessage?: { title?: string; singleSelectReply?: { selectedRowId?: string } };
   };
   messageType?: string;
   messageTimestamp?: number;
