@@ -76,9 +76,14 @@ export class ConversationService {
   }
 
   private async saveFlowContext(conversationId: string, ctx: FlowContext): Promise<void> {
-    await this.db('conversations')
-      .where('id', conversationId)
-      .update({ conversation_context: JSON.stringify(ctx), updated_at: new Date() });
+    try {
+      await this.db('conversations')
+        .where('id', conversationId)
+        .update({ conversation_context: JSON.stringify(ctx), updated_at: new Date() });
+    } catch (e) {
+      // Never let a state-save failure abort the reply pipeline.
+      logger.error('saveFlowContext failed', { conversationId, error: (e as any)?.message });
+    }
   }
 
   // ===========================================================================
