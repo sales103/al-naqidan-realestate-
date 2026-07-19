@@ -75,12 +75,23 @@ function AISettings() {
 
   if (isLoading) return <div className="py-12 text-center text-gray-400">جاري التحميل...</div>;
 
-  const models = [
-    { value: 'gpt-4o',       label: 'GPT-4o — الأذكى والأقوى' },
-    { value: 'gpt-4o-mini',  label: 'GPT-4o Mini — سريع وموفر (موصى به)' },
-    { value: 'gpt-4-turbo',  label: 'GPT-4 Turbo' },
-    { value: 'gpt-3.5-turbo',label: 'GPT-3.5 Turbo — الأسرع والأرخص' },
+  const PROVIDERS = [
+    { value: 'openai', label: 'OpenAI', url: 'https://api.openai.com/v1', models: [
+      { value: 'gpt-4o',        label: 'GPT-4o — الأذكى والأقوى' },
+      { value: 'gpt-4o-mini',   label: 'GPT-4o Mini — سريع وموفر (موصى به)' },
+      { value: 'gpt-4-turbo',   label: 'GPT-4 Turbo' },
+      { value: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo — الأسرع والأرخص' },
+    ]},
+    { value: 'groq', label: 'Groq (مجاني وسريع)', url: 'https://api.groq.com/openai/v1', models: [
+      { value: 'llama-3.3-70b-versatile',      label: 'Llama 3.3 70B — موصى به' },
+      { value: 'llama-3.1-8b-instant',         label: 'Llama 3.1 8B — الأسرع' },
+      { value: 'mixtral-8x7b-32768',           label: 'Mixtral 8x7B' },
+      { value: 'gemma2-9b-it',                 label: 'Gemma 2 9B' },
+    ]},
   ];
+  const isGroq = form.base_url?.includes('groq.com') || false;
+  const currentProvider = isGroq ? PROVIDERS[1] : PROVIDERS[0];
+  const models = currentProvider.models;
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -97,8 +108,22 @@ function AISettings() {
       <div className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4">
         <h3 className="font-bold text-gray-900 flex items-center gap-2">
           <span className="w-6 h-6 bg-blue-100 rounded-lg flex items-center justify-center text-xs font-bold text-blue-700">1</span>
-          مفتاح OpenAI API
+          مزود الذكاء الاصطناعي
         </h3>
+
+        <div className="grid grid-cols-2 gap-3">
+          {PROVIDERS.map(p => (
+            <button key={p.value} type="button"
+              onClick={() => { set('base_url', p.value === 'openai' ? '' : p.url); set('openai_model', p.models[0].value); }}
+              className={`p-3 rounded-xl border-2 text-sm font-medium transition-all ${
+                (p.value === 'groq' ? isGroq : !isGroq)
+                  ? 'border-blue-500 bg-blue-50 text-blue-700'
+                  : 'border-gray-200 text-gray-600 hover:border-gray-300'
+              }`}>
+              {p.label}
+            </button>
+          ))}
+        </div>
 
         <div>
           <label className="label">API Key</label>
@@ -117,7 +142,7 @@ function AISettings() {
             </button>
           </div>
           <p className="text-xs text-gray-400 mt-1">
-            احصل على مفتاحك من <span className="font-mono bg-gray-100 px-1 rounded">platform.openai.com/api-keys</span>
+            احصل على مفتاحك من <span className="font-mono bg-gray-100 px-1 rounded">{isGroq ? 'console.groq.com/keys' : 'platform.openai.com/api-keys'}</span>
           </p>
         </div>
 
@@ -132,7 +157,7 @@ function AISettings() {
           <label className="label">Base URL (اختياري — للأنظمة البديلة)</label>
           <input value={form.base_url} onChange={e => set('base_url', e.target.value)}
             className="input font-mono text-sm" placeholder="https://api.openai.com/v1" dir="ltr" />
-          <p className="text-xs text-gray-400 mt-1">اتركه فارغاً لاستخدام OpenAI الأصلي</p>
+          <p className="text-xs text-gray-400 mt-1">{isGroq ? 'يستخدم Groq API تلقائياً' : 'اتركه فارغاً لاستخدام OpenAI الأصلي'}</p>
         </div>
       </div>
 
