@@ -30,7 +30,8 @@ export default function PropertiesPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['properties', filters, page, search],
     queryFn: () => propertiesApi.search({
-      ...filters,
+      ...(filters.property_type ? { property_type: filters.property_type } : {}),
+      ...(filters.city_id ? { city_id: filters.city_id } : {}),
       page,
       limit: 12,
       search: search || undefined,
