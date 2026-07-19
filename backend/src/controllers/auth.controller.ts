@@ -9,6 +9,11 @@ import { sendMail } from '../services/email.service.js';
 import { config } from '../config/index.js';
 import { logger } from '../config/logger.js';
 import { AppError } from '../middleware/error.middleware.js';
+import {
+  recordFailedLogin, isAccountLocked, clearFailedLogins,
+  recordOtpFailure, clearOtpFailures,
+  blacklistToken, logSuspicious,
+} from '../middleware/security.middleware.js';
 import type { User } from '../types/index.js';
 
 function generateOtp(): string {
@@ -72,13 +77,30 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
     }).parse(req.body);
     const db = getDatabase();
 
+    // Account lockout check
+    if (await isAccountLocked(email)) {
+      logSuspicious('login_locked_account', req, { email });
+      throw new AppError(429, 'الحساب مقفل مؤقتاً بسبب محاولات كثيرة — انتظر 15 دقيقة');
+    }
+
     const user = await db('users').where({ email }).first() as User | undefined;
-    if (!user) throw new AppError(401, 'البريد الإلكتروني أو كلمة المرور غير صحيحة');
+    if (!user) {
+      await recordFailedLogin(email);
+      logSuspicious('login_unknown_email', req, { email });
+      throw new AppError(401, 'البريد الإلكتروني أو كلمة المرور غير صحيحة');
+    }
 
     const isValid = await bcrypt.compare(password, user.password_hash);
-    if (!isValid) throw new AppError(401, 'البريد الإلكتروني أو كلمة المرور غير صحيحة');
+    if (!isValid) {
+      await recordFailedLogin(email);
+      logSuspicious('login_wrong_password', req, { email, userId: user.id });
+      throw new AppError(401, 'البريد الإلكتروني أو كلمة المرور غير صحيحة');
+    }
 
     if (!user.is_active) throw new AppError(403, 'حسابك قيد المراجعة — انتظر موافقة المدير للدخول');
+
+    // Clear lockout on successful login
+    await clearFailedLogins(email);
 
     const token = jwt.sign(
       { user_id: user.id, email: user.email, role: user.role },
@@ -130,6 +152,8 @@ export const changePassword = async (req: Request, res: Response, next: NextFunc
 
 // ─── Logout ──────────────────────────────────────────────────────────────────
 export const logout = async (req: Request, res: Response): Promise<void> => {
+  const token = req.headers.authorization?.slice(7);
+  if (token) await blacklistToken(token);
   logger.info('User logged out', { userId: req.user?.user_id });
   res.json({ success: true, message: 'تم تسجيل الخروج بنجاح' });
 };
@@ -172,9 +196,14 @@ export const verifyOtp = async (req: Request, res: Response, next: NextFunction)
     }).parse(req.body);
 
     const stored = await cacheGet<string>(`otp:${purpose}:${email}`);
-    if (!stored || stored !== otp) throw new AppError(400, 'رمز التحقق غير صحيح أو منتهي الصلاحية');
+    if (!stored || stored !== otp) {
+      await recordOtpFailure(email, purpose); // throws after 5 failures + invalidates OTP
+      logSuspicious('otp_wrong', req, { email, purpose });
+      throw new AppError(400, 'رمز التحقق غير صحيح أو منتهي الصلاحية');
+    }
 
     await cacheDel(`otp:${purpose}:${email}`);
+    await clearOtpFailures(email, purpose);
     const verifiedToken = crypto.randomBytes(32).toString('hex');
     await cacheSet(`verified:${purpose}:${verifiedToken}`, email, 600);
 

@@ -1,4 +1,5 @@
 ﻿import { Router, Request, Response, NextFunction } from 'express';
+import { setupRateLimit } from '../middleware/security.middleware.js';
 import bcrypt from 'bcrypt';
 import { z } from 'zod';
 import { getDatabase } from '../database/connection.js';
@@ -25,7 +26,7 @@ router.get('/status', async (_req: Request, res: Response, next: NextFunction): 
 });
 
 // POST /api/setup/init — runs ONCE, creates first super_admin + saves settings
-router.post('/init', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+router.post('/init', setupRateLimit, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     if (await isSetupDone()) throw new AppError(400, 'تم الإعداد مسبقاً');
 

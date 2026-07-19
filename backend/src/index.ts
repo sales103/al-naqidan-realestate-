@@ -1,4 +1,4 @@
-// Catch ALL errors early before any imports
+﻿// Catch ALL errors early before any imports
 process.on('uncaughtException', (err) => { console.error('[FATAL] uncaughtException:', err); process.exit(1); });
 process.on('unhandledRejection', (err) => { console.error('[FATAL] unhandledRejection:', err); process.exit(1); });
 console.log('[BOOT] Starting Al-Naqidan backend...');
@@ -17,6 +17,7 @@ import { initDatabase } from './database/connection.js';
 import { initRedis } from './database/redis.js';
 import routes from './routes/index.js';
 import { errorHandler, notFound } from './middleware/error.middleware.js';
+import { requestId, checkTokenBlacklist, metricsGuard } from './middleware/security.middleware.js';
 
 const app = express();
 
@@ -24,10 +25,31 @@ const app = express();
 // Security Middleware
 // =============================================================================
 
+app.use(requestId);
+
 app.use(helmet({
-  contentSecurityPolicy: config.app.isProduction,
+  contentSecurityPolicy: config.app.isProduction ? {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc:  ["'self'"],
+      styleSrc:   ["'self'", "'unsafe-inline'"],
+      imgSrc:     ["'self'", "data:", "https:"],
+      connectSrc: ["'self'"],
+      fontSrc:    ["'self'", "data:"],
+      objectSrc:  ["'none'"],
+      frameAncestors: ["'none'"],
+    },
+  } : false,
   crossOriginEmbedderPolicy: false,
+  hsts: config.app.isProduction ? { maxAge: 31536000, includeSubDomains: true, preload: true } : false,
+  noSniff: true,
+  xssFilter: true,
+  hidePoweredBy: true,
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
 }));
+
+// Check JWT blacklist on all authenticated routes
+app.use('/api', checkTokenBlacklist);
 
 app.use(cors({
   origin: (origin, callback) => {
@@ -86,7 +108,7 @@ app.get('/health', (_req, res) => {
   });
 });
 
-app.get('/metrics', async (_req, res) => {
+app.get('/metrics', metricsGuard, async (_req, res) => {
   res.set('Content-Type', metricsRegister.contentType);
   res.end(await metricsRegister.metrics());
 });
@@ -107,6 +129,16 @@ app.use(errorHandler);
 const bootstrap = async (): Promise<void> => {
   try {
     logger.info(`Starting ${config.app.name} v${config.app.version}...`);
+
+    // Security sanity checks at boot
+    if (config.auth.jwtSecret.length < 32) {
+      logger.error('[SECURITY] JWT_SECRET is too short (< 32 chars) — set a strong secret in Railway env vars!');
+      if (config.app.isProduction) process.exit(1);
+    }
+    if (config.auth.jwtSecret.includes('dev-secret') || config.auth.jwtSecret.includes('change-in-production')) {
+      logger.error('[SECURITY] JWT_SECRET is using the default dev value — change it immediately!');
+      if (config.app.isProduction) process.exit(1);
+    }
 
     await initDatabase();
     await initRedis();
