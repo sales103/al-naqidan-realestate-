@@ -22,7 +22,9 @@ function InstanceCard({ instance, index }: { instance: typeof INSTANCES[0]; inde
   const { data: statusData } = useQuery({
     queryKey: ['wa-status', instance.id],
     queryFn: () => api.get(`/whatsapp/status/${instance.id}`),
-    refetchInterval: status === 'connecting' ? 2000 : 8000,
+    refetchInterval: status === 'connecting' ? 3000 : 15000,
+    retry: false,
+    throwOnError: false,
   });
 
   useEffect(() => {
@@ -55,10 +57,12 @@ function InstanceCard({ instance, index }: { instance: typeof INSTANCES[0]; inde
         setQr(b64.startsWith('data:') ? b64 : `data:image/png;base64,${b64}`);
         setStatus('connecting');
       } else {
-        toast.error('لم يُولَّد الباركود، حاول مجدداً');
+        toast('لم يظهر الباركود — حاول مرة أخرى بعد لحظة', { icon: '⏳' });
       }
     },
-    onError: () => toast.error('تعذّر الاتصال بالخادم'),
+    onError: () => {
+      toast('خدمة واتساب غير متاحة حالياً — تأكد من تشغيل الخادم أو تواصل مع الدعم', { icon: '⚠️' });
+    },
   });
 
   const disconnect = useMutation({
@@ -70,6 +74,13 @@ function InstanceCard({ instance, index }: { instance: typeof INSTANCES[0]; inde
       setConnectedAt(null);
       qc.invalidateQueries({ queryKey: ['wa-status', instance.id] });
       toast.success('تم قطع الاتصال');
+    },
+    onError: () => {
+      // Still reset UI even if server didn't respond
+      setStatus('disconnected');
+      setQr(null);
+      setPhone(null);
+      setConnectedAt(null);
     },
   });
 
@@ -177,15 +188,32 @@ function InstanceCard({ instance, index }: { instance: typeof INSTANCES[0]; inde
 
         {/* Disconnected */}
         {status === 'disconnected' && (
-          <div className="flex flex-col items-center gap-4 py-2">
-            <div className="w-14 h-14 bg-gray-100 rounded-full flex items-center justify-center">
-              <svg className="w-7 h-7 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+          <div className="flex flex-col items-center gap-4 py-3">
+            <div className="w-16 h-16 bg-gray-50 border-2 border-dashed border-gray-200 rounded-full flex items-center justify-center">
+              <svg className="w-7 h-7 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
               </svg>
             </div>
-            <p className="text-sm text-gray-400 text-center">الرقم غير مربوط<br/>اضغط لربط واتساب</p>
+            <div className="text-center">
+              <p className="text-sm font-medium text-gray-600">لم يتم الربط بعد</p>
+              <p className="text-xs text-gray-400 mt-1">اضغط الزر أدناه لبدء ربط واتساب</p>
+            </div>
             <button
               onClick={() => connect.mutate()}
+              disabled={connect.isPending}
+              className="w-full py-2.5 bg-green-600 hover:bg-green-700 active:bg-green-800 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-60 flex items-center justify-center gap-2 shadow-sm"
+            >
+              {connect.isPending ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  جاري التهيئة…
+                </>
+              ) : (
+                <>📱 ربط واتساب</>
+              )}
+            </button>
+          </div>
+        )}
               disabled={connect.isPending}
               className="w-full py-2.5 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
             >
