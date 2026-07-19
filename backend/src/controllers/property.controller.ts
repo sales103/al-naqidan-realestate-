@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { propertyService } from '../services/property.service.js';
+import { getDatabase } from '../database/connection.js';
 import { AppError } from '../middleware/error.middleware.js';
 import type { PropertySearchParams } from '../types/index.js';
 
@@ -50,7 +51,30 @@ const createSchema = z.object({
   is_featured: z.boolean().default(false),
   tags: z.array(z.string()).default([]),
   available_from: z.string().optional(),
+  // Image fields
+  main_image_url: z.string().url().optional().or(z.literal('')),
+  images: z.array(z.string().url()).optional(),
 });
+
+async function savePropertyImages(propertyId: string, images: string[], mainImageUrl?: string): Promise<void> {
+  if (!images.length && !mainImageUrl) return;
+  const db = getDatabase();
+  await db('property_media').where('property_id', propertyId).delete();
+  const allImages = mainImageUrl
+    ? [mainImageUrl, ...images.filter(u => u !== mainImageUrl)]
+    : images;
+  const uniqueImages = [...new Set(allImages)].filter(Boolean);
+  if (uniqueImages.length > 0) {
+    await db('property_media').insert(
+      uniqueImages.map((url, i) => ({ property_id: propertyId, url, type: 'image', sort_order: i }))
+    );
+  }
+  if (mainImageUrl) {
+    await db('properties').where('id', propertyId).update({ main_image_url: mainImageUrl });
+  } else if (uniqueImages[0]) {
+    await db('properties').where('id', propertyId).update({ main_image_url: uniqueImages[0] });
+  }
+}
 
 export const searchProperties = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -97,18 +121,21 @@ export const getProperty = async (req: Request, res: Response, next: NextFunctio
 
 export const createProperty = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const data = createSchema.parse(req.body);
+    const { main_image_url, images, ...rest } = createSchema.parse(req.body);
     const property = await propertyService.create({
-      ...data,
+      ...rest,
+      main_image_url: main_image_url || undefined,
       created_by: req.user!.user_id,
       currency: 'SAR',
-      is_featured: data.is_featured,
-      negotiable: data.negotiable,
-      features: data.features,
-      amenities: data.amenities,
+      features: rest.features,
+      amenities: rest.amenities,
       nearby_places: [],
-      tags: data.tags,
+      tags: rest.tags,
     } as any);
+
+    if (images?.length || main_image_url) {
+      await savePropertyImages(property.id, images ?? [], main_image_url || undefined);
+    }
 
     res.status(201).json({ success: true, data: property });
   } catch (error) { next(error); }
@@ -116,8 +143,16 @@ export const createProperty = async (req: Request, res: Response, next: NextFunc
 
 export const updateProperty = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const data = createSchema.partial().parse(req.body);
-    const property = await propertyService.update(req.params['id']!, data as any);
+    const { main_image_url, images, ...rest } = createSchema.partial().parse(req.body);
+    const property = await propertyService.update(req.params['id']!, {
+      ...rest,
+      ...(main_image_url !== undefined ? { main_image_url: main_image_url || undefined } : {}),
+    } as any);
+
+    if (images !== undefined || main_image_url !== undefined) {
+      await savePropertyImages(property.id, images ?? [], main_image_url || undefined);
+    }
+
     res.json({ success: true, data: property });
   } catch (error) { next(error); }
 };

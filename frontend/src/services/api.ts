@@ -1,4 +1,4 @@
-import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
+﻿import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import { useAuthStore } from '../store/auth.store.ts';
 
 export const api = axios.create({
@@ -80,4 +80,18 @@ export const conversationsApi = {
   messages: (id: string) => api.get(`/conversations/${id}/messages`),
   send: (id: string, text: string) => api.post(`/conversations/${id}/send`, { text }),
   toggleAI: (id: string) => api.patch(`/conversations/${id}/toggle-ai`),
+};
+
+// --- Deals ---
+export const dealsApi = {
+  list:         (params?: Record<string, any>) => api.get('/deals', { params }),
+  create:       (data: any)                    => api.post('/deals', data),
+  updateStatus: (id: string, status: string)   => api.patch(`/deals/${id}/status`, { status }),
+};
+
+// --- Notifications ---
+export const notificationsApi = {
+  list:        ()            => api.get('/notifications'),
+  markRead:    (id: string)  => api.patch(`/notifications/${id}/read`),
+  markAllRead: ()            => api.patch('/notifications/read-all'),
 };
