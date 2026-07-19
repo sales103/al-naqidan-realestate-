@@ -1,4 +1,4 @@
-import { Router } from 'express';
+﻿import { Router } from 'express';
 import authRoutes from './auth.routes.js';
 import propertyRoutes from './property.routes.js';
 import clientRoutes from './client.routes.js';
@@ -12,6 +12,7 @@ import whatsappRoutes from './whatsapp.routes.js';
 import sheetsRoutes from './sheets.routes.js';
 import usersRoutes from './users.routes.js';
 import eventsRoutes from './events.routes.js';
+import notificationsRoutes from './notifications.routes.js';
 
 const router = Router();
 
@@ -28,5 +29,6 @@ router.use('/whatsapp', whatsappRoutes);
 router.use('/sheets', sheetsRoutes);
 router.use('/users', usersRoutes);
 router.use('/events', eventsRoutes);
+router.use('/notifications', notificationsRoutes);
 
 export default router;
