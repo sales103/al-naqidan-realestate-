@@ -440,10 +440,15 @@ export class ConversationService {
         properties = result.properties;
         searchSummary = this.buildSearchSummary(ctx, aiResult.extracted_data);
         for (const prop of properties.slice(0, 3)) {
-          await propertyService.incrementInquiryCount(prop.id);
-          await this.db('client_property_interests')
-            .insert({ client_id: client.id, property_id: prop.id, interest_level: 3 })
-            .onConflict(['client_id', 'property_id']).ignore();
+          // Analytics only — must never block sending properties to the client.
+          try {
+            await propertyService.incrementInquiryCount(prop.id);
+            await this.db('client_property_interests')
+              .insert({ client_id: client.id, property_id: prop.id, interest_level: 3 })
+              .onConflict(['client_id', 'property_id']).ignore();
+          } catch (e: any) {
+            logger.warn('interest tracking skipped', { error: e?.message });
+          }
         }
       } else if (preloadedProperties.length > 0 && ctx.state === 'ai') {
         properties = preloadedProperties.slice(0, 3);
