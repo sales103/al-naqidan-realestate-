@@ -134,7 +134,15 @@ export class ConversationService {
       // Bot replies 24/7 with AI. Working hours only matter when handing off to a human.
       await this.handleFlow(message, client, conversation, payload, isNew);
     } catch (error) {
-      logger.error('Webhook handling failed', { error });
+      logger.error('Webhook handling failed', {
+        message: (error as any)?.message,
+        code: (error as any)?.code,
+        detail: (error as any)?.detail,
+        column: (error as any)?.column,
+        table: (error as any)?.table,
+        constraint: (error as any)?.constraint,
+        where: (error as any)?.where,
+      });
     }
   }
 
