@@ -10,6 +10,7 @@ import ReportsPage from './pages/ReportsPage.tsx';
 import WhatsAppPage from './pages/WhatsAppPage.tsx';
 import GoogleSheetsPage from './pages/GoogleSheetsPage.tsx';
 import UsersPage from './pages/UsersPage.tsx';
+import DealsPage from './pages/DealsPage.tsx';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -29,6 +30,7 @@ export default function App() {
         <Route path="reports" element={<ReportsPage />} />
         <Route path="whatsapp" element={<WhatsAppPage />} />
         <Route path="sheets" element={<GoogleSheetsPage />} />
+        <Route path="deals" element={<DealsPage />} />
         <Route path="users" element={<UsersPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
