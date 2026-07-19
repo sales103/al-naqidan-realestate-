@@ -17,6 +17,7 @@ import { initDatabase } from './database/connection.js';
 import { initRedis } from './database/redis.js';
 import routes from './routes/index.js';
 import { errorHandler, notFound } from './middleware/error.middleware.js';
+import { startScheduler, stopScheduler } from './scheduler.js';
 import { requestId, checkTokenBlacklist, metricsGuard } from './middleware/security.middleware.js';
 
 const app = express();
@@ -145,6 +146,7 @@ const bootstrap = async (): Promise<void> => {
 
     await initDatabase();
     await initRedis();
+    startScheduler();
 
     const server = app.listen(config.app.port, '0.0.0.0', () => {
       logger.info(`Server running on port ${config.app.port}`, {
@@ -159,6 +161,7 @@ const bootstrap = async (): Promise<void> => {
       server.close(async () => {
         const { closeDatabase } = await import('./database/connection.js');
         const { closeRedis } = await import('./database/redis.js');
+        stopScheduler();
         await Promise.all([closeDatabase(), closeRedis()]);
         logger.info('Server closed');
         process.exit(0);
