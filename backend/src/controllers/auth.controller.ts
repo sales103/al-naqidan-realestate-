@@ -43,11 +43,13 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
     }).parse(req.body);
     const db = getDatabase();
 
-    const user = await db('users').where({ email, is_active: true }).first() as User | undefined;
+    const user = await db('users').where({ email }).first() as User | undefined;
     if (!user) throw new AppError(401, 'البريد الإلكتروني أو كلمة المرور غير صحيحة');
 
     const isValid = await bcrypt.compare(password, user.password_hash);
     if (!isValid) throw new AppError(401, 'البريد الإلكتروني أو كلمة المرور غير صحيحة');
+
+    if (!user.is_active) throw new AppError(403, 'حسابك قيد المراجعة — انتظر موافقة المدير للدخول');
 
     const token = jwt.sign(
       { user_id: user.id, email: user.email, role: user.role },
@@ -175,24 +177,16 @@ export const register = async (req: Request, res: Response, next: NextFunction):
       full_name_ar: full_name_ar ?? full_name,
       password_hash: hash,
       role: 'sales_agent',
-      is_active: true,
+      is_active: false,
     }).returning('*') as User[];
 
     await cacheDel(`verified:register:${verified_token}`);
 
-    const token = jwt.sign(
-      { user_id: user.id, email: user.email, role: user.role },
-      config.auth.jwtSecret,
-      { expiresIn: config.auth.jwtExpiresIn } as jwt.SignOptions
-    );
-
-    logger.info('New user registered', { userId: user.id, email: user.email });
+    logger.info('New user registered (pending approval)', { userId: user.id, email: user.email });
     res.status(201).json({
       success: true,
-      data: {
-        token,
-        user: { id: user.id, email: user.email, full_name: user.full_name, full_name_ar: user.full_name_ar, role: user.role, avatar_url: null },
-      },
+      pending: true,
+      message: 'تم إنشاء حسابك بنجاح — في انتظار موافقة المدير',
     });
   } catch (error) { next(error); }
 };

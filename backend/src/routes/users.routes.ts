@@ -7,18 +7,54 @@ import { config } from '../config/index.js';
 const router = Router();
 router.use(authenticate);
 
-// GET /api/users — list all users (admin/manager)
-router.get('/', authorize('super_admin', 'admin', 'sales_manager'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+// GET /api/users — list active users
+router.get('/', authorize('super_admin', 'admin', 'sales_manager'), async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const db = getDatabase();
     const users = await db('users')
       .select('id','full_name','full_name_ar','email','role','whatsapp_instance','is_active','created_at','last_login_at')
+      .where('is_active', true)
       .orderBy('created_at', 'asc');
     res.json({ success: true, data: users });
   } catch (error) { next(error); }
 });
 
-// POST /api/users — create user
+// GET /api/users/pending — pending approval
+router.get('/pending', authorize('super_admin', 'admin', 'sales_manager'), async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const db = getDatabase();
+    const users = await db('users')
+      .select('id','full_name','full_name_ar','email','role','created_at')
+      .where('is_active', false)
+      .orderBy('created_at', 'desc');
+    res.json({ success: true, data: users });
+  } catch (error) { next(error); }
+});
+
+// POST /api/users/:id/approve
+router.post('/:id/approve', authorize('super_admin', 'admin'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const db = getDatabase();
+    const { role } = req.body as { role?: string };
+    const updates: any = { is_active: true, updated_at: new Date() };
+    if (role) updates.role = role;
+    const [user] = await db('users').where('id', req.params['id']).update(updates)
+      .returning(['id','full_name','full_name_ar','email','role','is_active']);
+    if (!user) { res.status(404).json({ success: false, error: 'المستخدم غير موجود' }); return; }
+    res.json({ success: true, data: user, message: 'تم قبول الموظف' });
+  } catch (error) { next(error); }
+});
+
+// POST /api/users/:id/reject — hard delete pending user
+router.post('/:id/reject', authorize('super_admin', 'admin'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const db = getDatabase();
+    await db('users').where({ id: req.params['id'], is_active: false }).delete();
+    res.json({ success: true, message: 'تم رفض الطلب وحذف الحساب' });
+  } catch (error) { next(error); }
+});
+
+// POST /api/users — create user (admin-created, active immediately)
 router.post('/', authorize('super_admin', 'admin'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { full_name, full_name_ar, email, password, role, whatsapp_instance } = req.body as any;

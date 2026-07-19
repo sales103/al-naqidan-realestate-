@@ -63,10 +63,13 @@ export const clientsApi = {
 
 // ─── Users ───────────────────────────────────────────────────────────────────
 export const usersApi = {
-  list: () => api.get('/users'),
-  create: (data: any) => api.post('/users', data),
-  update: (id: string, data: any) => api.put(`/users/${id}`, data),
-  remove: (id: string) => api.delete(`/users/${id}`),
+  list:    ()                          => api.get('/users'),
+  pending: ()                          => api.get('/users/pending'),
+  approve: (id: string, role?: string) => api.post(`/users/${id}/approve`, { role }),
+  reject:  (id: string)                => api.post(`/users/${id}/reject`),
+  create:  (data: any)                 => api.post('/users', data),
+  update:  (id: string, data: any)     => api.put(`/users/${id}`, data),
+  remove:  (id: string)                => api.delete(`/users/${id}`),
 };
 
 // ─── WhatsApp ────────────────────────────────────────────────────────────────
