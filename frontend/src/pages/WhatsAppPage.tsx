@@ -76,7 +76,6 @@ function InstanceCard({ instance, index }: { instance: typeof INSTANCES[0]; inde
       toast.success('تم قطع الاتصال');
     },
     onError: () => {
-      // Still reset UI even if server didn't respond
       setStatus('disconnected');
       setQr(null);
       setPhone(null);
@@ -88,7 +87,7 @@ function InstanceCard({ instance, index }: { instance: typeof INSTANCES[0]; inde
     const r: any = await api.get(`/whatsapp/qr/${instance.id}`).catch(() => null);
     const b64 = r?.data?.data?.base64;
     if (b64) setQr(b64.startsWith('data:') ? b64 : `data:image/png;base64,${b64}`);
-    else toast.error('الباركود غير متاح، اضغط ربط الرقم');
+    else toast.error('الباركود غير متاح، اضغط ربط واتساب');
   };
 
   const colors: Record<string, string> = {
@@ -210,20 +209,6 @@ function InstanceCard({ instance, index }: { instance: typeof INSTANCES[0]; inde
                 </>
               ) : (
                 <>📱 ربط واتساب</>
-              )}
-            </button>
-          </div>
-        )}
-              disabled={connect.isPending}
-              className="w-full py-2.5 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
-            >
-              {connect.isPending ? (
-                <>
-                  <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                  جاري الاتصال…
-                </>
-              ) : (
-                <>📱 ربط الرقم</>
               )}
             </button>
           </div>
