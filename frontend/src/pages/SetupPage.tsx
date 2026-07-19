@@ -157,6 +157,10 @@ export default function SetupPage() {
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl transition-colors text-lg flex items-center justify-center gap-2">
                 ابدأ الإعداد
                 <ChevronLeftIcon className="w-5 h-5" />
+              <button type="button" onClick={() => navigate("/login")}
+                className="mt-3 w-full text-sm text-slate-400 hover:text-slate-200 transition-colors py-2">
+                ربما لاحقاً — تسجيل الدخول أولاً
+              </button>
               </button>
             </div>
           )}
