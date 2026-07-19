@@ -16,8 +16,19 @@ import type {
   PropertySearchParams,
 } from '../types/index.js';
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 export class ConversationService {
   private get db() { return getDatabase(); }
+
+  private extractButtonId(payload: WhatsAppWebhookPayload): string | null {
+    const msg = payload.data.message;
+    if (!msg) return null;
+    return msg.buttonsResponseMessage?.selectedButtonId
+      ?? msg.templateButtonReplyMessage?.selectedId
+      ?? msg.listResponseMessage?.singleSelectReply?.selectedRowId
+      ?? null;
+  }
 
   // =============================================================================
   // Main Webhook Handler
@@ -79,14 +90,14 @@ export class ConversationService {
         return;
       }
 
-      // Send quick reply buttons for new clients (first message)
+      // ── Level-1 buttons: new client welcome ──────────────────────────────
       if (isNew) {
         const greeting = whatsappService.getRiyadhGreeting();
         await whatsappService.sendText(
           client.phone,
           `${greeting} 🏠\nأهلاً بك في مكتب عبدالحكيم النقيدان للاستثمارات العقارية\nكيف يمكنني مساعدتك؟`
         );
-        await new Promise((r) => setTimeout(r, 800));
+        await sleep(800);
         await whatsappService.sendButtons(client.phone, 'اختر نوع طلبك', 'حدّد ما تبحث عنه:', [
           { id: 'btn_residential', text: '🏠 سكني' },
           { id: 'btn_commercial', text: '🏢 تجاري' },
@@ -94,6 +105,69 @@ export class ConversationService {
           { id: 'btn_evaluation', text: '📊 تقييم عقار' },
         ]);
         return;
+      }
+
+      // ── Level-2 buttons: sub-type selection ──────────────────────────────
+      const clickedId = this.extractButtonId(payload);
+
+      if (clickedId === 'btn_residential') {
+        await whatsappService.sendButtons(client.phone, 'نوع السكن', 'ما نوع الوحدة السكنية؟', [
+          { id: 'btn2_family', text: '👨‍👩‍👧 عوائل' },
+          { id: 'btn2_single', text: '👤 عزاب' },
+        ]);
+        return;
+      }
+
+      if (clickedId === 'btn_commercial') {
+        await whatsappService.sendButtons(client.phone, 'نوع التجاري', 'ما نوع العقار التجاري؟', [
+          { id: 'btn2_shop',      text: '🏪 محل' },
+          { id: 'btn2_hall',      text: '🏬 صالة' },
+          { id: 'btn2_office',    text: '🏢 مكتب' },
+          { id: 'btn2_warehouse', text: '🏭 مستودع' },
+        ]);
+        return;
+      }
+
+      if (clickedId === 'btn_land') {
+        await whatsappService.sendButtons(client.phone, 'غرض الأرض', 'ما الغرض من الأرض؟', [
+          { id: 'btn2_land_res',   text: '🏘 سكني' },
+          { id: 'btn2_land_com',   text: '🏗 تجاري' },
+          { id: 'btn2_land_inv',   text: '💼 استثماري' },
+        ]);
+        return;
+      }
+
+      if (clickedId === 'btn_evaluation') {
+        await clientService.update(client.id, { status: 'contacted' } as any);
+        await whatsappService.sendText(
+          client.phone,
+          '📊 لتقييم العقار نحتاج بعض التفاصيل:\n\nما نوع العقار الذي تريد تقييمه وموقعه؟'
+        );
+        return;
+      }
+
+      // ── Level-2 clicks: save client profile then hand off to AI ──────────
+      const L2_MAP: Record<string, { types: string[]; text: string }> = {
+        btn2_family:    { types: ['apartment', 'villa'],    text: 'أريد وحدة سكنية للعوائل' },
+        btn2_single:    { types: ['apartment'],             text: 'أريد وحدة سكنية للعزاب' },
+        btn2_shop:      { types: ['showroom'],              text: 'أريد محلاً تجارياً' },
+        btn2_hall:      { types: ['showroom'],              text: 'أريد صالة عرض أو صالة تجارية' },
+        btn2_office:    { types: ['office'],                text: 'أريد مكتباً' },
+        btn2_warehouse: { types: ['warehouse'],             text: 'أريد مستودعاً' },
+        btn2_land_res:  { types: ['land'],                  text: 'أريد أرضاً سكنية' },
+        btn2_land_com:  { types: ['land'],                  text: 'أريد أرضاً تجارية' },
+        btn2_land_inv:  { types: ['land'],                  text: 'أريد أرضاً للاستثمار' },
+      };
+
+      if (clickedId && L2_MAP[clickedId]) {
+        const mapped = L2_MAP[clickedId]!;
+        // Save preferred types to client profile
+        await clientService.update(client.id, {
+          preferred_property_types: mapped.types,
+          status: 'contacted',
+        } as any);
+        // Override message content so AI knows what was selected
+        message.content = mapped.text;
       }
 
       // Process message with AI
