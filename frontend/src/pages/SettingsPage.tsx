@@ -67,7 +67,7 @@ function AISettings() {
       respect_hours: form.respect_hours,
       max_tokens:    parseInt(form.max_tokens) || 500,
       temperature:   parseFloat(form.temperature) || 0.7,
-      ...(form.openai_key ? { api_key: form.openai_key } : {}),
+      ...(form.openai_key ? { openai_key: form.openai_key } : {}),
     }),
     onSuccess: () => { toast.success('تم حفظ إعدادات الذكاء الاصطناعي'); qc.invalidateQueries({ queryKey: ['settings'] }); },
     onError: (e: any) => toast.error(e.response?.data?.error ?? 'فشل الحفظ'),

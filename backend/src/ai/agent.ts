@@ -31,8 +31,18 @@ async function getAISettings(): Promise<AISettings> {
   try {
     const db = getDatabase();
     const row = await db('system_settings').where('key', 'ai').first();
-    if (row?.value?.openai_key) {
-      _cachedSettings = row.value as AISettings;
+    // Accept the key under either field name (frontend historically sent 'api_key').
+    const savedKey = row?.value?.openai_key ?? row?.value?.api_key;
+    if (savedKey) {
+      const v = row.value as any;
+      _cachedSettings = {
+        openai_key: savedKey,
+        model: v.model ?? config.openai.model,
+        base_url: v.base_url ?? config.openai.baseUrl ?? 'https://api.openai.com/v1',
+        max_tokens: v.max_tokens ?? config.openai.maxTokens,
+        temperature: v.temperature ?? config.openai.temperature,
+        system_prompt: v.system_prompt ?? '',
+      };
       _cacheExpiry = now + 60_000; // cache 1 minute
       return _cachedSettings;
     }
