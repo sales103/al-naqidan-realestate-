@@ -11,12 +11,21 @@ export class ClientService {
     const cached = await cacheGet<Client>(`client:wa:${whatsappId}`);
     if (cached) return cached;
 
-    const client = await this.db('clients as cl')
-      .leftJoin('cities as c', 'cl.city_id', 'c.id')
-      .leftJoin('users as u', 'cl.assigned_agent_id', 'u.id')
-      .select('cl.*', 'c.name_ar as city_name', 'u.full_name_ar as agent_name')
-      .where('cl.whatsapp_id', whatsappId)
-      .first() as Client | undefined;
+    let client: Client | undefined;
+    try {
+      client = await this.db('clients as cl')
+        .leftJoin('cities as c', 'cl.city_id', 'c.id')
+        .leftJoin('users as u', 'cl.assigned_agent_id', 'u.id')
+        .select('cl.*', 'c.name_ar as city_name', 'u.full_name_ar as agent_name')
+        .where('cl.whatsapp_id', whatsappId)
+        .first() as Client | undefined;
+    } catch {
+      // Enrichment columns (city_name/agent_name) may be absent — fall back to the
+      // plain client row so a missing display column never breaks message handling.
+      client = await this.db('clients')
+        .where('whatsapp_id', whatsappId)
+        .first() as Client | undefined;
+    }
 
     if (client) {
       await cacheSet(`client:wa:${whatsappId}`, client, 1800);
