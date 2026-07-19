@@ -55,6 +55,7 @@ export const clientsApi = {
   get: (id: string) => api.get(`/clients/${id}`),
   create: (data: any) => api.post('/clients', data),
   update: (id: string, data: any) => api.put(`/clients/${id}`, data),
+  matches: (id: string) => api.get(`/clients/${id}/matches`),
   stats: () => api.get('/clients/stats'),
   addNote: (id: string, data: { content: string; is_private?: boolean }) =>
     api.post(`/clients/${id}/notes`, data),

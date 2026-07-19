@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   UserIcon, PhoneIcon, MagnifyingGlassIcon,
   ChatBubbleLeftRightIcon, PencilSquareIcon, PlusIcon, XMarkIcon,
+  HomeIcon, CurrencyDollarIcon,
 } from '@heroicons/react/24/outline';
 import { clientsApi } from '../services/api.ts';
 import { format } from 'date-fns';
@@ -143,11 +144,75 @@ function ClientModal({ client, onClose }: { client?: any; onClose: () => void })
   );
 }
 
+function MatchesModal({ client, onClose }: { client: any; onClose: () => void }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['client-matches', client.id],
+    queryFn: () => clientsApi.matches(client.id),
+  });
+  const properties = (data as any)?.data?.data ?? [];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-5 border-b">
+          <div>
+            <h3 className="text-lg font-bold">عقارات مناسبة لـ {client.full_name ?? client.full_name_ar}</h3>
+            <p className="text-sm text-gray-500 mt-0.5">
+              {client.budget_max ? `الميزانية: ${client.budget_max?.toLocaleString('ar-SA')} ريال` : 'بدون تحديد ميزانية'}
+            </p>
+          </div>
+          <button onClick={onClose}><XMarkIcon className="w-5 h-5 text-gray-400" /></button>
+        </div>
+        <div className="p-5">
+          {isLoading ? (
+            <div className="space-y-3">
+              {[...Array(3)].map((_, i) => <div key={i} className="h-20 bg-gray-100 rounded-xl animate-pulse" />)}
+            </div>
+          ) : properties.length === 0 ? (
+            <div className="text-center py-10 text-gray-400">
+              <HomeIcon className="w-10 h-10 mx-auto mb-2 text-gray-300" />
+              لا توجد عقارات مناسبة حالياً
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {properties.map((p: any) => (
+                <div key={p.id} className="border border-gray-100 rounded-xl p-4 flex items-start justify-between gap-4 hover:bg-gray-50">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <HomeIcon className="w-5 h-5 text-blue-500" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-900">{p.title_ar ?? p.title}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {[p.city_name, p.address].filter(Boolean).join(' · ') || 'غير محدد'}
+                        {p.area_sqm ? ` · ${p.area_sqm} م²` : ''}
+                        {p.rooms ? ` · ${p.rooms} غرف` : ''}
+                      </p>
+                    </div>
+                  </div>
+                  {p.price > 0 && (
+                    <div className="flex items-center gap-1 text-blue-700 font-bold whitespace-nowrap text-sm">
+                      <CurrencyDollarIcon className="w-4 h-4" />
+                      {p.price?.toLocaleString('ar-SA')}
+                      <span className="text-xs font-normal text-gray-400">ر</span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ClientsPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
   const [modal, setModal] = useState<{ open: boolean; client?: any }>({ open: false });
+  const [matchesClient, setMatchesClient] = useState<any>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['clients', statusFilter, search, page],
@@ -161,6 +226,9 @@ export default function ClientsPage() {
     <div className="space-y-6">
       {modal.open && (
         <ClientModal client={modal.client} onClose={() => setModal({ open: false })} />
+      )}
+      {matchesClient && (
+        <MatchesModal client={matchesClient} onClose={() => setMatchesClient(null)} />
       )}
 
       {/* Header */}
@@ -284,6 +352,13 @@ export default function ClientsPage() {
                               title="تعديل"
                             >
                               <PencilSquareIcon className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => setMatchesClient(client)}
+                              className="text-purple-600 hover:text-purple-700 p-1 rounded hover:bg-purple-50"
+                              title="عقارات مناسبة"
+                            >
+                              <HomeIcon className="w-4 h-4" />
                             </button>
                             <button
                               className="text-green-600 hover:text-green-700 p-1 rounded hover:bg-green-50"

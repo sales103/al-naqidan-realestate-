@@ -91,6 +91,32 @@ export const getClient = async (req: Request, res: Response, next: NextFunction)
   } catch (error) { next(error); }
 };
 
+export const getClientMatches = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { getDatabase } = await import('../database/connection.js');
+    const db = getDatabase();
+    const client = await clientService.findById(req.params['id']!);
+    if (!client) throw new AppError(404, 'العميل غير موجود');
+
+    const query = db('properties as p')
+      .leftJoin('cities as c', 'p.city_id', 'c.id')
+      .select('p.*', 'c.name_ar as city_name')
+      .where('p.status', 'available')
+      .limit(10);
+
+    if ((client as any).budget_max) query.where('p.price', '<=', (client as any).budget_max);
+    if ((client as any).city_id) query.where('p.city_id', (client as any).city_id);
+
+    const types: string[] = (client as any).preferred_property_types ?? [];
+    if (types.length > 0) query.whereIn('p.property_type', types);
+
+    query.orderByRaw('p.is_featured DESC, p.inquiry_count DESC');
+
+    const properties = await query;
+    res.json({ success: true, data: properties, total: properties.length });
+  } catch (error) { next(error); }
+};
+
 export const updateClient = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const data = updateSchema.parse(req.body);
