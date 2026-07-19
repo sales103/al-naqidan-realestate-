@@ -95,3 +95,9 @@ export const notificationsApi = {
   markRead:    (id: string)  => api.patch(`/notifications/${id}/read`),
   markAllRead: ()            => api.patch('/notifications/read-all'),
 };
+// --- Settings ---
+export const settingsApi = {
+  getAll: ()                          => api.get('/settings'),
+  get:    (key: string)               => api.get(`/settings/${key}`),
+  save:   (key: string, value: any)   => api.put(`/settings/${key}`, { value }),
+};

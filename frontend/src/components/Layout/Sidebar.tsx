@@ -2,7 +2,7 @@
 import {
   HomeIcon, BuildingOfficeIcon, UsersIcon,
   ChatBubbleLeftRightIcon, ChartBarIcon,
-  XMarkIcon, TableCellsIcon, UserGroupIcon, BriefcaseIcon,
+  XMarkIcon, TableCellsIcon, UserGroupIcon, BriefcaseIcon, Cog6ToothIcon,
 } from '@heroicons/react/24/outline';
 import { useAuthStore } from '../../store/auth.store.ts';
 
@@ -69,6 +69,10 @@ export default function Sidebar({ open, onClose }: Props) {
               <NavLink to="/users" className={({ isActive }) => `nav-item ${isActive ? 'nav-item-active' : 'nav-item-inactive'}`}>
                 <UserGroupIcon className="w-5 h-5 flex-shrink-0" />
                 <span>المستخدمون</span>
+              </NavLink>
+              <NavLink to="/settings" className={({ isActive }) => `nav-item ${isActive ? 'nav-item-active' : 'nav-item-inactive'}`}>
+                <Cog6ToothIcon className="w-5 h-5 flex-shrink-0" />
+                <span>إعدادات النظام</span>
               </NavLink>
             </>
           )}
