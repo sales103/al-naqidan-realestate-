@@ -3,6 +3,19 @@ import { z } from 'zod';
 import { clientService } from '../services/client.service.js';
 import { AppError } from '../middleware/error.middleware.js';
 
+const createSchema = z.object({
+  full_name: z.string().min(2),
+  phone: z.string().min(9),
+  email: z.string().email().optional(),
+  budget_max: z.number().min(0).optional(),
+  purpose: z.enum(['buy','rent','invest']).optional(),
+  preferred_property_types: z.array(z.string()).optional(),
+  special_requirements: z.string().optional(),
+  status: z.enum(['new','contacted','interested','viewing_scheduled','negotiating','contract_pending','closed_won','closed_lost','on_hold','follow_up']).default('new'),
+  source: z.string().optional(),
+  notes: z.string().optional(),
+});
+
 const updateSchema = z.object({
   full_name: z.string().min(2).optional(),
   email: z.string().email().optional(),
@@ -43,6 +56,30 @@ export const listClients = async (req: Request, res: Response, next: NextFunctio
         total_pages: Math.ceil(result.total / limit),
       },
     });
+  } catch (error) { next(error); }
+};
+
+export const createClient = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const data = createSchema.parse(req.body);
+    const db = (await import('../database/connection.js')).getDatabase();
+    const phone = data.phone.replace(/\D/g, '');
+    const [client] = await db('clients').insert({
+      full_name: data.full_name,
+      full_name_ar: data.full_name,
+      phone,
+      whatsapp_id: phone + '@s.whatsapp.net',
+      email: data.email ?? null,
+      budget_max: data.budget_max ?? null,
+      purpose: data.purpose ?? 'buy',
+      preferred_property_types: data.preferred_property_types ? JSON.stringify(data.preferred_property_types) : null,
+      special_requirements: data.special_requirements ?? null,
+      status: data.status,
+      source: data.source ?? 'manual',
+      ai_summary: data.notes ?? null,
+      first_contact_at: new Date(),
+    }).returning('*');
+    res.status(201).json({ success: true, data: client });
   } catch (error) { next(error); }
 };
 

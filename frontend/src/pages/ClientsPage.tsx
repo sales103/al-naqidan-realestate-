@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   UserIcon, PhoneIcon, MagnifyingGlassIcon,
-  ChatBubbleLeftRightIcon, PencilSquareIcon,
+  ChatBubbleLeftRightIcon, PencilSquareIcon, PlusIcon, XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { clientsApi } from '../services/api.ts';
 import { format } from 'date-fns';
@@ -21,11 +21,133 @@ const statusConfig: Record<string, { label: string; color: string }> = {
   follow_up: { label: 'متابعة', color: 'bg-cyan-100 text-cyan-700' },
 };
 
+function ClientModal({ client, onClose }: { client?: any; onClose: () => void }) {
+  const qc = useQueryClient();
+  const isEdit = !!client;
+  const [form, setForm] = useState({
+    full_name: client?.full_name ?? client?.full_name_ar ?? '',
+    phone: client?.phone ?? '',
+    email: client?.email ?? '',
+    budget_max: client?.budget_max ?? '',
+    purpose: client?.purpose ?? 'buy',
+    status: client?.status ?? 'new',
+    source: client?.source ?? 'manual',
+    special_requirements: client?.special_requirements ?? '',
+    notes: client?.ai_summary ?? '',
+  });
+
+  const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
+
+  const createMut = useMutation({
+    mutationFn: (data: any) => clientsApi.create(data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['clients'] }); onClose(); },
+  });
+  const updateMut = useMutation({
+    mutationFn: (data: any) => clientsApi.update(client.id, data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['clients'] }); onClose(); },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = {
+      full_name: form.full_name,
+      phone: form.phone,
+      email: form.email || undefined,
+      budget_max: form.budget_max ? parseFloat(String(form.budget_max)) : undefined,
+      purpose: form.purpose,
+      status: form.status,
+      source: form.source,
+      special_requirements: form.special_requirements || undefined,
+      notes: form.notes || undefined,
+    };
+    if (isEdit) updateMut.mutate(payload);
+    else createMut.mutate(payload);
+  };
+
+  const isPending = createMut.isPending || updateMut.isPending;
+  const error = (createMut.error || updateMut.error) as any;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-5 border-b">
+          <h3 className="text-lg font-bold">{isEdit ? 'تعديل العميل' : 'إضافة عميل جديد'}</h3>
+          <button onClick={onClose}><XMarkIcon className="w-5 h-5 text-gray-400" /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">الاسم *</label>
+            <input required className="input w-full" value={form.full_name} onChange={(e) => set('full_name', e.target.value)} placeholder="اسم العميل" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">رقم الجوال *</label>
+              <input required className="input w-full" value={form.phone} onChange={(e) => set('phone', e.target.value)} placeholder="05xxxxxxxx" dir="ltr" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">البريد الإلكتروني</label>
+              <input className="input w-full" type="email" value={form.email} onChange={(e) => set('email', e.target.value)} placeholder="example@email.com" dir="ltr" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">الميزانية (ريال)</label>
+              <input className="input w-full" type="number" value={form.budget_max} onChange={(e) => set('budget_max', e.target.value)} placeholder="0" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">الغرض</label>
+              <select className="input w-full" value={form.purpose} onChange={(e) => set('purpose', e.target.value)}>
+                <option value="buy">شراء</option>
+                <option value="rent">إيجار</option>
+                <option value="invest">استثمار</option>
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">الحالة</label>
+              <select className="input w-full" value={form.status} onChange={(e) => set('status', e.target.value)}>
+                {Object.entries(statusConfig).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">المصدر</label>
+              <select className="input w-full" value={form.source} onChange={(e) => set('source', e.target.value)}>
+                <option value="manual">يدوي</option>
+                <option value="whatsapp">واتساب</option>
+                <option value="website">الموقع</option>
+                <option value="referral">إحالة</option>
+                <option value="social_media">سوشيال ميديا</option>
+                <option value="excel_import">استيراد Excel</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">متطلبات خاصة</label>
+            <input className="input w-full" value={form.special_requirements} onChange={(e) => set('special_requirements', e.target.value)} placeholder="مثال: قريب من المدرسة، 4 غرف" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">ملاحظات</label>
+            <textarea className="input w-full" rows={2} value={form.notes} onChange={(e) => set('notes', e.target.value)} placeholder="أي معلومات إضافية..." />
+          </div>
+          {error && <p className="text-red-500 text-sm">{error?.response?.data?.error ?? 'حدث خطأ'}</p>}
+          <div className="flex gap-3 pt-2">
+            <button type="submit" disabled={isPending} className="btn-primary flex-1 justify-center">
+              {isPending ? 'جارٍ الحفظ...' : isEdit ? 'حفظ التعديلات' : 'إضافة العميل'}
+            </button>
+            <button type="button" onClick={onClose} className="btn-secondary">إلغاء</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function ClientsPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
-  const [_selectedClient, setSelectedClient] = useState<any>(null);
+  const [modal, setModal] = useState<{ open: boolean; client?: any }>({ open: false });
 
   const { data, isLoading } = useQuery({
     queryKey: ['clients', statusFilter, search, page],
@@ -37,12 +159,20 @@ export default function ClientsPage() {
 
   return (
     <div className="space-y-6">
+      {modal.open && (
+        <ClientModal client={modal.client} onClose={() => setModal({ open: false })} />
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">إدارة العملاء</h2>
           <p className="text-sm text-gray-500 mt-1">{pagination?.total ?? 0} عميل</p>
         </div>
+        <button className="btn-primary" onClick={() => setModal({ open: true })}>
+          <PlusIcon className="w-5 h-5" />
+          إضافة عميل
+        </button>
       </div>
 
       {/* Status tabs */}
@@ -52,9 +182,7 @@ export default function ClientsPage() {
             key={s.key}
             onClick={() => { setStatusFilter(s.key); setPage(1); }}
             className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
-              statusFilter === s.key
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              statusFilter === s.key ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
           >
             {s.label}
@@ -84,7 +212,7 @@ export default function ClientsPage() {
                 <th className="table-header">العميل</th>
                 <th className="table-header">الجوال</th>
                 <th className="table-header">الميزانية</th>
-                <th className="table-header">الطلب</th>
+                <th className="table-header">الغرض</th>
                 <th className="table-header">الحالة</th>
                 <th className="table-header">آخر تواصل</th>
                 <th className="table-header">الإجراء</th>
@@ -110,16 +238,19 @@ export default function ClientsPage() {
                 )
                 : clients.map((client: any) => {
                     const sc = statusConfig[client.status] ?? { label: client.status, color: 'bg-gray-100 text-gray-600' };
+                    const purposeMap: Record<string, string> = { buy: 'شراء', rent: 'إيجار', invest: 'استثمار' };
                     return (
                       <tr key={client.id} className="hover:bg-gray-50 transition-colors">
                         <td className="table-cell">
                           <div className="flex items-center gap-3">
                             <div className="w-9 h-9 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                              <span className="text-sm font-bold text-blue-700">{client.full_name?.charAt(0)}</span>
+                              <span className="text-sm font-bold text-blue-700">
+                                {(client.full_name ?? client.full_name_ar ?? '?').charAt(0)}
+                              </span>
                             </div>
                             <div>
-                              <p className="font-medium text-gray-900">{client.full_name}</p>
-                              <p className="text-xs text-gray-400">{client.city_name ?? '—'}</p>
+                              <p className="font-medium text-gray-900">{client.full_name ?? client.full_name_ar}</p>
+                              <p className="text-xs text-gray-400">{client.source ?? '—'}</p>
                             </div>
                           </div>
                         </td>
@@ -132,15 +263,10 @@ export default function ClientsPage() {
                         <td className="table-cell">
                           {client.budget_max
                             ? <span className="font-medium">{client.budget_max.toLocaleString('ar-SA')} ر</span>
-                            : <span className="text-gray-400">—</span>
-                          }
+                            : <span className="text-gray-400">—</span>}
                         </td>
-                        <td className="table-cell">
-                          <span className="text-gray-600 text-xs">
-                            {client.preferred_property_types?.length > 0
-                              ? client.preferred_property_types[0]
-                              : '—'}
-                          </span>
+                        <td className="table-cell text-gray-600 text-sm">
+                          {purposeMap[client.purpose] ?? client.purpose ?? '—'}
                         </td>
                         <td className="table-cell">
                           <span className={`badge ${sc.color}`}>{sc.label}</span>
@@ -153,7 +279,7 @@ export default function ClientsPage() {
                         <td className="table-cell">
                           <div className="flex items-center gap-2">
                             <button
-                              onClick={() => setSelectedClient(client)}
+                              onClick={() => setModal({ open: true, client })}
                               className="text-blue-600 hover:text-blue-700 p-1 rounded hover:bg-blue-50"
                               title="تعديل"
                             >
@@ -174,7 +300,6 @@ export default function ClientsPage() {
           </table>
         </div>
 
-        {/* Pagination */}
         {pagination && pagination.total_pages > 1 && (
           <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
             <span className="text-sm text-gray-500">

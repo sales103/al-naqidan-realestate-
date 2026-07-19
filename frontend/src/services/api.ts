@@ -53,6 +53,7 @@ export const propertiesApi = {
 export const clientsApi = {
   list: (params?: Record<string, any>) => api.get('/clients', { params }),
   get: (id: string) => api.get(`/clients/${id}`),
+  create: (data: any) => api.post('/clients', data),
   update: (id: string, data: any) => api.put(`/clients/${id}`, data),
   stats: () => api.get('/clients/stats'),
   addNote: (id: string, data: { content: string; is_private?: boolean }) =>
