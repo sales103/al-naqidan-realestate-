@@ -72,7 +72,9 @@ export class ConversationService {
 
   private async getFlowContext(conversationId: string): Promise<FlowContext> {
     const conv = await this.db('conversations').where('id', conversationId).first();
-    return (conv?.conversation_context as FlowContext) ?? { state: 'welcome' };
+    const ctx = conv?.conversation_context as FlowContext | undefined;
+    // Empty/default context ('{}') has no state — treat it as a fresh welcome.
+    return ctx && ctx.state ? ctx : { state: 'welcome' };
   }
 
   private async saveFlowContext(conversationId: string, ctx: FlowContext): Promise<void> {
