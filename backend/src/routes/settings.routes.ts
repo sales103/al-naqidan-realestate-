@@ -50,7 +50,7 @@ router.put('/:key', requireAdmin, async (req: Request, res: Response, next: Next
     }).parse(req.body);
 
     const db = getDatabase();
-    const userId = (req as any).user?.id;
+    const userId = (req as any).user?.user_id;
 
     await db('system_settings')
       .insert({ key: req.params['key'], value: JSON.stringify(value), description, updated_by: userId, updated_at: new Date() })
