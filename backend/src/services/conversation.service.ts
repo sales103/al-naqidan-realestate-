@@ -219,19 +219,70 @@ export class ConversationService {
       // Get conversation history
       const history = await this.getConversationHistory(conversation.id, 10);
 
-      // Pre-search properties based on keywords before calling AI
-      // so the AI can mention real property details in its response
-      const searchTriggers = ['شقة','فيلا','أرض','عقار','غرف','ميزانية','سعر','إيجار','شراء','بيع','مساحة','حي','دور','استثمار','تجاري','سكني','مكتب'];
+      // Pre-search properties — load real data before AI call so it can mention them
+      const SEARCH_KEYWORDS = [
+        'شقة','فيلا','أرض','عقار','غرف','ميزانية','سعر','إيجار','شراء','بيع','مساحة',
+        'حي','دور','استثمار','تجاري','سكني','مكتب','مستودع','معرض','مزرعة','عمارة',
+        'روف','دوبلكس','ملحق','استوديو',
+      ];
+      // Budget extraction from message (e.g. "مليون" "500 الف" "800000")
+      const extractBudgetFromMsg = (msg: string): number | undefined => {
+        const millionMatch = msg.match(/(d+(?:.d+)?)s*مليون/);
+        if (millionMatch) return parseFloat(millionMatch[1]!) * 1_000_000;
+        const thousandMatch = msg.match(/(d+(?:.d+)?)s*ألف|الف/);
+        if (thousandMatch) return parseFloat(thousandMatch[1]!) * 1_000;
+        const numMatch = msg.match(/(d{5,})/);
+        if (numMatch) return parseInt(numMatch[1]!, 10);
+        return undefined;
+      };
+
       let preloadedProperties: any[] = [];
-      if (searchTriggers.some((kw) => messageContent.includes(kw))) {
+      if (SEARCH_KEYWORDS.some((kw) => messageContent.includes(kw))) {
         try {
-          const clientBudget = (client as any).budget_max;
+          const clientBudget = (client as any).budget_max ?? extractBudgetFromMsg(messageContent);
           const clientTypes: string[] = (client as any).preferred_property_types ?? [];
+
+          // Extract property type from message if not stored
+          const typeFromMsg = (): string | undefined => {
+            if (messageContent.includes('شقة') || messageContent.includes('شقق')) return 'apartment';
+            if (messageContent.includes('فيلا') || messageContent.includes('فلل')) return 'villa';
+            if (messageContent.includes('أرض') || messageContent.includes('ارض')) return 'land';
+            if (messageContent.includes('مكتب')) return 'office';
+            if (messageContent.includes('مستودع')) return 'warehouse';
+            if (messageContent.includes('معرض') || messageContent.includes('محل')) return 'showroom';
+            if (messageContent.includes('عمارة')) return 'building';
+            return undefined;
+          };
+
+          const resolvedType = clientTypes[0] ?? typeFromMsg();
           const params: any = { status: 'available', limit: 5, sort_by: 'featured' };
           if (clientBudget) params.price_max = clientBudget;
-          if (clientTypes.length > 0) params.property_type = clientTypes[0];
+          if (resolvedType) params.property_type = resolvedType;
+
+          // Try to resolve city from message
+          const CITY_HINTS: Record<string, string> = {
+            'الرياض': 'الرياض', 'رياض': 'الرياض',
+            'جدة': 'جدة', 'مكة': 'مكة المكرمة',
+            'المدينة': 'المدينة المنورة', 'الدمام': 'الدمام',
+            'الخبر': 'الخبر', 'الطائف': 'الطائف',
+            'تبوك': 'تبوك', 'أبها': 'أبها',
+          };
+          for (const [hint, cityName] of Object.entries(CITY_HINTS)) {
+            if (messageContent.includes(hint)) {
+              const cityId = await propertyService.resolveCityId(cityName);
+              if (cityId) { params.city_ids = [cityId]; break; }
+            }
+          }
+
           const preResult = await propertyService.search(params);
           preloadedProperties = preResult.properties;
+
+          // If nothing found with type filter, try without
+          if (preloadedProperties.length === 0 && resolvedType) {
+            const relaxed = { ...params, property_type: undefined };
+            const fallback = await propertyService.search(relaxed);
+            preloadedProperties = fallback.properties;
+          }
         } catch { /* continue without properties */ }
       }
 
