@@ -24,9 +24,9 @@ const makeRateLimit = (windowMs: number, max: number, message: string) =>
     keyGenerator: (req) => req.ip ?? req.socket.remoteAddress ?? 'unknown',
   });
 
-// Login: 10 attempts / 15 min per IP
+// Login: 100 attempts / 15 min per IP
 export const loginRateLimit = makeRateLimit(
-  15 * 60 * 1000, 10,
+  15 * 60 * 1000, 100,
   'محاولات كثيرة — انتظر 15 دقيقة'
 );
 
