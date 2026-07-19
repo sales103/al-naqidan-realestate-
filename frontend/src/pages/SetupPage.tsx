@@ -30,7 +30,7 @@ const companySchema = z.object({
 
 const smtpSchema = z.object({
   smtp_host:      z.string().min(1, 'مطلوب'),
-  smtp_port:      z.string().default('587'),
+  smtp_port:      z.string().min(1, 'مطلوب'),
   smtp_user:      z.string().email('بريد غير صحيح'),
   smtp_password:  z.string().min(1, 'مطلوب'),
   smtp_from:      z.string().optional(),
