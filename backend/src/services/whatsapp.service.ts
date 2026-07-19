@@ -18,24 +18,24 @@ export class WhatsAppService {
     });
   }
 
-  async sendText(to: string, text: string): Promise<string> {
+  async sendText(to: string, text: string, instance: string = config.whatsapp.instanceName): Promise<string> {
     try {
       const response = await this.client.post(
-        `message/sendText/${config.whatsapp.instanceName}`,
+        `message/sendText/${instance}`,
         { number: to, text }
       );
-      logger.info('WhatsApp text sent', { to, length: text.length });
+      logger.info('WhatsApp text sent', { to, instance, length: text.length });
       return response.data.key?.id ?? '';
     } catch (error: any) {
-      logger.error('WhatsApp send text failed', { to, error: error.message });
+      logger.error('WhatsApp send text failed', { to, instance, error: error.message });
       throw error;
     }
   }
 
-  async sendImage(to: string, imageUrl: string, caption?: string): Promise<string> {
+  async sendImage(to: string, imageUrl: string, caption?: string, instance: string = config.whatsapp.instanceName): Promise<string> {
     try {
       const response = await this.client.post(
-        `message/sendMedia/${config.whatsapp.instanceName}`,
+        `message/sendMedia/${instance}`,
         {
           number: to,
           mediatype: 'image',
@@ -45,15 +45,15 @@ export class WhatsAppService {
       );
       return response.data.key?.id ?? '';
     } catch (error: any) {
-      logger.error('WhatsApp send image failed', { to, error: error.message });
+      logger.error('WhatsApp send image failed', { to, instance, error: error.message });
       throw error;
     }
   }
 
-  async sendDocument(to: string, url: string, fileName: string, caption?: string): Promise<string> {
+  async sendDocument(to: string, url: string, fileName: string, caption?: string, instance: string = config.whatsapp.instanceName): Promise<string> {
     try {
       const response = await this.client.post(
-        `message/sendMedia/${config.whatsapp.instanceName}`,
+        `message/sendMedia/${instance}`,
         {
           number: to,
           mediatype: 'document',
@@ -64,33 +64,33 @@ export class WhatsAppService {
       );
       return response.data.key?.id ?? '';
     } catch (error: any) {
-      logger.error('WhatsApp send document failed', { to, error: error.message });
+      logger.error('WhatsApp send document failed', { to, instance, error: error.message });
       throw error;
     }
   }
 
-  async sendLocation(to: string, lat: number, lng: number, name?: string, address?: string): Promise<string> {
+  async sendLocation(to: string, lat: number, lng: number, name?: string, address?: string, instance: string = config.whatsapp.instanceName): Promise<string> {
     try {
       const response = await this.client.post(
-        `message/sendLocation/${config.whatsapp.instanceName}`,
+        `message/sendLocation/${instance}`,
         { number: to, latitude: lat, longitude: lng, name, address }
       );
       return response.data.key?.id ?? '';
     } catch (error: any) {
-      logger.error('WhatsApp send location failed', { to, error: error.message });
+      logger.error('WhatsApp send location failed', { to, instance, error: error.message });
       throw error;
     }
   }
 
-  async sendProperties(to: string, properties: Property[], searchSummary: string): Promise<void> {
+  async sendProperties(to: string, properties: Property[], searchSummary: string, instance: string = config.whatsapp.instanceName): Promise<void> {
     const textMessage = formatPropertiesResponse(properties, searchSummary);
-    await this.sendText(to, textMessage);
+    await this.sendText(to, textMessage, instance);
 
     // Send main image for each property (max 3)
     for (const prop of properties.slice(0, 3)) {
       if (prop.main_image_url) {
         const caption = `🏠 ${prop.title_ar ?? prop.title}\n📍 ${prop.district_name ?? ''} - ${prop.city_name ?? ''}\n💰 ${prop.price?.toLocaleString('ar-SA') ?? ''} ريال\n🔗 ${prop.code}`;
-        await this.sendImage(to, prop.main_image_url, caption);
+        await this.sendImage(to, prop.main_image_url, caption, instance);
         await this.delay(500);
       }
 
@@ -101,7 +101,8 @@ export class WhatsAppService {
           prop.latitude,
           prop.longitude,
           prop.title_ar ?? prop.title,
-          prop.address
+          prop.address,
+          instance
         );
         await this.delay(500);
       }
@@ -122,9 +123,9 @@ export class WhatsAppService {
     }
   }
 
-  async markAsRead(messageId: string, chatId: string): Promise<void> {
+  async markAsRead(messageId: string, chatId: string, instance: string = config.whatsapp.instanceName): Promise<void> {
     try {
-      await this.client.post(`chat/readMessages/${config.whatsapp.instanceName}`, {
+      await this.client.post(`chat/readMessages/${instance}`, {
         readMessages: [{ id: messageId, fromMe: false, remoteJid: chatId }],
       });
     } catch {
@@ -147,10 +148,10 @@ export class WhatsAppService {
   }
 
 
-  async sendButtons(to: string, title: string, body: string, buttons: { id: string; text: string }[]): Promise<void> {
+  async sendButtons(to: string, title: string, body: string, buttons: { id: string; text: string }[], instance: string = config.whatsapp.instanceName): Promise<void> {
     try {
       await this.client.post(
-        `message/sendButtons/${config.whatsapp.instanceName}`,
+        `message/sendButtons/${instance}`,
         {
           number: to,
           title,
@@ -166,7 +167,7 @@ export class WhatsAppService {
     } catch {
       // Fallback to text if buttons not supported
       const text = `${title}\n${body}\n\n${buttons.map((b, i) => `${['1️⃣','2️⃣','3️⃣','4️⃣'][i] ?? `${i+1}.`} ${b.text}`).join('\n')}`;
-      await this.sendText(to, text);
+      await this.sendText(to, text, instance);
     }
   }
 

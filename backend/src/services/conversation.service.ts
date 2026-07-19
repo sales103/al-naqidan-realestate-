@@ -102,6 +102,8 @@ export class ConversationService {
 
       const { client, isNew } = await clientService.findOrCreateByWhatsapp(chatId, phone, payload.data.pushName);
       const conversation = await this.findOrCreateConversation(client.id, chatId);
+      // Remember which WhatsApp number received this message so we reply from the same one.
+      (conversation as any).wa_instance = payload.instance || config.whatsapp.instanceName;
       const { content, messageType, mediaUrl, mimeType, lat, lng, locationName } = this.extractMessageContent(payload);
 
       const message = await this.saveMessage({
@@ -118,7 +120,7 @@ export class ConversationService {
         location_name: locationName,
       });
 
-      await whatsappService.markAsRead(whatsappMessageId, chatId);
+      await whatsappService.markAsRead(whatsappMessageId, chatId, this.waInstance(conversation));
 
       if (!conversation.is_ai_enabled || conversation.ai_handoff_requested) return;
 
@@ -127,6 +129,11 @@ export class ConversationService {
     } catch (error) {
       logger.error('Webhook handling failed', { error });
     }
+  }
+
+  // Which WhatsApp number to reply from (the one that received the message).
+  private waInstance(conversation: Conversation): string {
+    return (conversation as any).wa_instance ?? config.whatsapp.instanceName;
   }
 
   // ===========================================================================
@@ -156,15 +163,12 @@ export class ConversationService {
 
   private async stepWelcome(client: Client, conversation: Conversation, ctx: FlowContext): Promise<void> {
     const greeting = getRiyadhGreeting();
-    await whatsappService.sendText(
-      client.phone,
-      `${greeting}\nأهلاً بك في *مكتب عبدالحكيم النقيدان للاستثمارات العقارية* 🏢\n\nنسعد بخدمتك — ما الذي تبحث عنه؟`
-    );
+    await whatsappService.sendText(client.phone, `${greeting}\nأهلاً بك في *مكتب عبدالحكيم النقيدان للاستثمارات العقارية* 🏢\n\nنسعد بخدمتك — ما الذي تبحث عنه؟`, this.waInstance(conversation));
     await sleep(600);
     await whatsappService.sendButtons(client.phone, 'نوع الطلب', 'اختر ما يناسبك:', [
       { id: 'purpose_rent', text: '🔑 إيجار' },
       { id: 'purpose_buy',  text: '🏠 شراء' },
-    ]);
+    ], this.waInstance(conversation));
     await this.saveFlowContext(conversation.id, { ...ctx, state: 'purpose' });
     await clientService.update(client.id, { status: 'contacted' } as any);
   }
@@ -185,7 +189,7 @@ export class ConversationService {
       await whatsappService.sendButtons(client.phone, 'نوع الطلب', 'اختر ما يناسبك:', [
         { id: 'purpose_rent', text: '🔑 إيجار' },
         { id: 'purpose_buy',  text: '🏠 شراء' },
-      ]);
+      ], this.waInstance(conversation));
       return;
     }
 
@@ -197,14 +201,14 @@ export class ConversationService {
         { id: 'type_apt_single', text: '👤 شقة عزاب' },
         { id: 'type_house',      text: '🏡 بيت' },
         { id: 'type_commercial', text: '🏪 تجاري (محل / صالة)' },
-      ]);
+      ], this.waInstance(conversation));
     } else {
       await whatsappService.sendButtons(client.phone, 'نوع العقار', 'ما الذي تبحث عنه؟', [
         { id: 'type_apt_family', text: '🏘 شقة' },
         { id: 'type_house',      text: '🏡 فيلا / بيت' },
         { id: 'type_land',       text: '📍 أرض' },
         { id: 'type_commercial', text: '🏢 تجاري' },
-      ]);
+      ], this.waInstance(conversation));
     }
   }
 
@@ -233,7 +237,7 @@ export class ConversationService {
     }
 
     if (!propType) {
-      await whatsappService.sendText(client.phone, 'من فضلك اختر نوع العقار من الخيارات 👆');
+      await whatsappService.sendText(client.phone, 'من فضلك اختر نوع العقار من الخيارات 👆', this.waInstance(conversation));
       return;
     }
 
@@ -241,7 +245,7 @@ export class ConversationService {
       await whatsappService.sendButtons(client.phone, 'نوع المدخل', 'ما نوع المدخل المطلوب؟', [
         { id: 'entry_private', text: '🔒 مدخل خاص' },
         { id: 'entry_shared',  text: '🚪 مدخل مشترك' },
-      ]);
+      ], this.waInstance(conversation));
       await this.saveFlowContext(conversation.id, { ...ctx, state: 'entry' });
       return;
     }
@@ -252,13 +256,13 @@ export class ConversationService {
         { id: 'com_hall',    text: '🏬 صالة' },
         { id: 'com_office',  text: '🏢 مكتب' },
         { id: 'com_storage', text: '📦 مستودع' },
-      ]);
+      ], this.waInstance(conversation));
       await this.saveFlowContext(conversation.id, { ...ctx, state: 'entry', property_type: 'commercial' });
       return;
     }
 
     await this.saveFlowContext(conversation.id, { ...ctx, state: 'location', property_type: propType });
-    await whatsappService.sendText(client.phone, '📍 ممتاز!\n\nفي أي *حي أو منطقة* تبحث؟\n_(اكتب اسم الحي أو المنطقة)_');
+    await whatsappService.sendText(client.phone, '📍 ممتاز!\n\nفي أي *حي أو منطقة* تبحث؟\n_(اكتب اسم الحي أو المنطقة)_', this.waInstance(conversation));
   }
 
   // ===========================================================================
@@ -281,12 +285,12 @@ export class ConversationService {
     }
 
     if (!finalType) {
-      await whatsappService.sendText(client.phone, 'من فضلك اختر من الخيارات 👆');
+      await whatsappService.sendText(client.phone, 'من فضلك اختر من الخيارات 👆', this.waInstance(conversation));
       return;
     }
 
     await this.saveFlowContext(conversation.id, { ...ctx, state: 'location', property_type: finalType });
-    await whatsappService.sendText(client.phone, '📍 ممتاز!\n\nفي أي *حي أو منطقة* تبحث؟\n_(اكتب اسم الحي أو المنطقة)_');
+    await whatsappService.sendText(client.phone, '📍 ممتاز!\n\nفي أي *حي أو منطقة* تبحث؟\n_(اكتب اسم الحي أو المنطقة)_', this.waInstance(conversation));
   }
 
   // ===========================================================================
@@ -297,15 +301,12 @@ export class ConversationService {
     text: string, client: Client, conversation: Conversation, ctx: FlowContext,
   ): Promise<void> {
     if (text.length < 2) {
-      await whatsappService.sendText(client.phone, 'من فضلك اكتب اسم الحي أو المنطقة 📍');
+      await whatsappService.sendText(client.phone, 'من فضلك اكتب اسم الحي أو المنطقة 📍', this.waInstance(conversation));
       return;
     }
     await this.saveFlowContext(conversation.id, { ...ctx, state: 'budget', location: text });
     await clientService.update(client.id, { district: text } as any);
-    await whatsappService.sendText(
-      client.phone,
-      `💰 شكراً!\n\nما هي *ميزانيتك التقريبية*؟\n_(مثال: 25 ألف سنوياً — أو 1.5 مليون — أو مفتوح)_`
-    );
+    await whatsappService.sendText(client.phone, `💰 شكراً!\n\nما هي *ميزانيتك التقريبية*؟\n_(مثال: 25 ألف سنوياً — أو 1.5 مليون — أو مفتوح)_`, this.waInstance(conversation));
   }
 
   // ===========================================================================
@@ -319,10 +320,7 @@ export class ConversationService {
     const isOpen = text.includes('مفتوح') || text.includes('مو محدد') || text.includes('ما عندي');
 
     if (!budget && !isOpen && text.length < 3) {
-      await whatsappService.sendText(
-        client.phone,
-        '💰 اكتب ميزانيتك التقريبية\n_(مثال: 20 ألف — أو 1 مليون — أو مفتوح)_'
-      );
+      await whatsappService.sendText(client.phone, '💰 اكتب ميزانيتك التقريبية\n_(مثال: 20 ألف — أو 1 مليون — أو مفتوح)_', this.waInstance(conversation));
       return;
     }
 
@@ -346,7 +344,7 @@ export class ConversationService {
 
     message.content = `أبحث عن ${typeInfo?.label ?? ctx.property_type ?? 'عقار'} للـ${purposeAr} في ${ctx.location ?? 'الرياض'} بميزانية ${budgetStr}`;
 
-    await whatsappService.sendText(client.phone, '🔍 جاري البحث عن أفضل الخيارات المتاحة...');
+    await whatsappService.sendText(client.phone, '🔍 جاري البحث عن أفضل الخيارات المتاحة...', this.waInstance(conversation));
     await sleep(800);
 
     await this.processWithAI(message, client, conversation, newCtx, undefined);
@@ -461,7 +459,7 @@ export class ConversationService {
         responseText = `${responseText}\n\n${this.handoffNote()}`;
       }
 
-      const outboundMsgId = await whatsappService.sendText(client.phone, responseText);
+      const outboundMsgId = await whatsappService.sendText(client.phone, responseText, this.waInstance(conversation));
       await this.saveMessage({
         conversation_id: conversation.id, whatsapp_message_id: outboundMsgId,
         direction: 'outbound', message_type: 'text', status: 'sent',
@@ -469,13 +467,10 @@ export class ConversationService {
       });
 
       if (properties.length > 0) {
-        await whatsappService.sendProperties(client.phone, properties, searchSummary);
+        await whatsappService.sendProperties(client.phone, properties, searchSummary, this.waInstance(conversation));
       } else if (ctx.state === 'ai' && preloadedProperties.length === 0 && aiResult.intent.primary === 'search_property') {
         await sleep(500);
-        await whatsappService.sendText(
-          client.phone,
-          '📋 لم نجد حالياً عقارات مطابقة لطلبك — سيتواصل معك أحد مستشارينا قريباً لمساعدتك. 🤝'
-        );
+        await whatsappService.sendText(client.phone, '📋 لم نجد حالياً عقارات مطابقة لطلبك — سيتواصل معك أحد مستشارينا قريباً لمساعدتك. 🤝', this.waInstance(conversation));
       }
 
       if (['new', 'contacted', 'interested'].includes(client.status)) {
@@ -485,7 +480,7 @@ export class ConversationService {
       logger.info('AI processed', { clientId: client.id, intent: aiResult.intent.primary, props: properties.length, ms: Date.now() - startTime });
     } catch (error: any) {
       logger.error('AI pipeline failed', { clientId: client.id, error: error?.message });
-      await whatsappService.sendText(client.phone, 'عذراً، حدث خطأ مؤقت. سيتواصل معك أحد مستشارينا قريباً. 🙏');
+      await whatsappService.sendText(client.phone, 'عذراً، حدث خطأ مؤقت. سيتواصل معك أحد مستشارينا قريباً. 🙏', this.waInstance(conversation));
     }
   }
 
