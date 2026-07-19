@@ -12,11 +12,13 @@ import whatsappRoutes from './whatsapp.routes.js';
 import sheetsRoutes from './sheets.routes.js';
 import usersRoutes from './users.routes.js';
 import eventsRoutes from './events.routes.js';
+import setupRoutes from './setup.routes.js';
 import notificationsRoutes from './notifications.routes.js';
 import settingsRoutes from './settings.routes.js';
 
 const router = Router();
 
+router.use('/setup', setupRoutes);
 router.use('/auth', authRoutes);
 router.use('/properties', propertyRoutes);
 router.use('/clients', clientRoutes);

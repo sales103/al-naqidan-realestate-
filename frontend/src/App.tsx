@@ -1,9 +1,12 @@
-﻿import { Routes, Route, Navigate } from 'react-router-dom';
+﻿import { useEffect, useState } from 'react';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from './store/auth.store.ts';
+import { api } from './services/api.ts';
 import Layout from './components/Layout/Layout.tsx';
 import LoginPage from './pages/LoginPage.tsx';
 import RegisterPage from './pages/RegisterPage.tsx';
 import ForgotPasswordPage from './pages/ForgotPasswordPage.tsx';
+import SetupPage from './pages/SetupPage.tsx';
 import DashboardPage from './pages/DashboardPage.tsx';
 import PropertiesPage from './pages/PropertiesPage.tsx';
 import ClientsPage from './pages/ClientsPage.tsx';
@@ -20,26 +23,51 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />;
 };
 
+function SetupGuard({ children }: { children: React.ReactNode }) {
+  const [checking, setChecking] = useState(true);
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    if (location.pathname === '/setup') { setChecking(false); return; }
+    api.get('/setup/status').then((res: any) => {
+      if (!res.data?.completed) navigate('/setup', { replace: true });
+    }).catch(() => {
+      // If setup endpoint fails (e.g. old deploy), continue normally
+    }).finally(() => setChecking(false));
+  }, []);
+
+  if (checking) return (
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+      <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+  return <>{children}</>;
+}
+
 export default function App() {
   return (
-    <Routes>
-      <Route path="/login"           element={<LoginPage />} />
-      <Route path="/register"        element={<RegisterPage />} />
-      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-      <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-        <Route index element={<Navigate to="/dashboard" replace />} />
-        <Route path="dashboard"     element={<DashboardPage />} />
-        <Route path="properties"    element={<PropertiesPage />} />
-        <Route path="clients"       element={<ClientsPage />} />
-        <Route path="conversations" element={<ConversationsPage />} />
-        <Route path="reports"       element={<ReportsPage />} />
-        <Route path="whatsapp"      element={<WhatsAppPage />} />
-        <Route path="sheets"        element={<GoogleSheetsPage />} />
-        <Route path="deals"         element={<DealsPage />} />
-        <Route path="users"         element={<UsersPage />} />
-        <Route path="settings"      element={<SettingsPage />} />
-      </Route>
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
-    </Routes>
+    <SetupGuard>
+      <Routes>
+        <Route path="/setup"          element={<SetupPage />} />
+        <Route path="/login"          element={<LoginPage />} />
+        <Route path="/register"       element={<RegisterPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route path="dashboard"     element={<DashboardPage />} />
+          <Route path="properties"    element={<PropertiesPage />} />
+          <Route path="clients"       element={<ClientsPage />} />
+          <Route path="conversations" element={<ConversationsPage />} />
+          <Route path="reports"       element={<ReportsPage />} />
+          <Route path="whatsapp"      element={<WhatsAppPage />} />
+          <Route path="sheets"        element={<GoogleSheetsPage />} />
+          <Route path="deals"         element={<DealsPage />} />
+          <Route path="users"         element={<UsersPage />} />
+          <Route path="settings"      element={<SettingsPage />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      </Routes>
+    </SetupGuard>
   );
 }
