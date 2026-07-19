@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+﻿import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -42,15 +42,12 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-blue-700 flex items-center justify-center p-4" dir="rtl">
-      {/* Background pattern */}
       <div className="absolute inset-0 opacity-10">
         <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '40px 40px' }} />
       </div>
 
       <div className="relative w-full max-w-md">
-        {/* Card */}
         <div className="bg-white rounded-3xl shadow-2xl p-8">
-          {/* Logo */}
           <div className="text-center mb-8">
             <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
               <BuildingOfficeIcon className="w-9 h-9 text-white" />
@@ -63,7 +60,6 @@ export default function LoginPage() {
             </div>
           </div>
 
-          {/* Form */}
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
             <div>
               <label className="label">البريد الإلكتروني</label>
@@ -78,7 +74,15 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label className="label">كلمة المرور</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="label mb-0">كلمة المرور</label>
+                <Link
+                  to="/forgot-password"
+                  className="text-xs text-blue-600 hover:text-blue-700 hover:underline"
+                >
+                  نسيت كلمة المرور؟
+                </Link>
+              </div>
               <div className="relative">
                 <input
                   {...register('password')}

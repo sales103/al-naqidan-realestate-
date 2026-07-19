@@ -1,4 +1,4 @@
-import dotenv from 'dotenv';
+﻿import dotenv from 'dotenv';
 import path from 'path';
 
 // Try both parent dir and current dir
@@ -81,6 +81,8 @@ export const config = {
     allowedVideoTypes: optionalEnv('ALLOWED_VIDEO_TYPES', 'mp4,mov,avi').split(','),
     allowedDocTypes: optionalEnv('ALLOWED_DOC_TYPES', 'pdf').split(','),
   },
+
+  frontendUrl: optionalEnv('FRONTEND_URL', 'http://localhost:5173'),
 
   smtp: {
     host: optionalEnv('SMTP_HOST', 'smtp.gmail.com'),

@@ -2,6 +2,8 @@
 import { useAuthStore } from './store/auth.store.ts';
 import Layout from './components/Layout/Layout.tsx';
 import LoginPage from './pages/LoginPage.tsx';
+import ForgotPasswordPage from './pages/ForgotPasswordPage.tsx';
+import ResetPasswordPage from './pages/ResetPasswordPage.tsx';
 import DashboardPage from './pages/DashboardPage.tsx';
 import PropertiesPage from './pages/PropertiesPage.tsx';
 import ClientsPage from './pages/ClientsPage.tsx';
@@ -21,6 +23,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
