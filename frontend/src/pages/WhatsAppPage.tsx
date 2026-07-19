@@ -60,9 +60,7 @@ function InstanceCard({ instance, index }: { instance: typeof INSTANCES[0]; inde
         toast('لم يظهر الباركود — حاول مرة أخرى بعد لحظة', { icon: '⏳' });
       }
     },
-    onError: () => {
-      toast('خدمة واتساب غير متاحة حالياً — تأكد من تشغيل الخادم أو تواصل مع الدعم', { icon: '⚠️' });
-    },
+    onError: () => { /* silent — end user doesn't need to see backend errors */ },
   });
 
   const disconnect = useMutation({
