@@ -25,7 +25,7 @@ async function instanceExists(name: string): Promise<boolean> {
 // POST /api/whatsapp/connect/:instance
 router.post('/connect/:instance', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { instance } = req.params;
+    const instance = req.params['instance']!;
 
     const exists = await instanceExists(instance);
 

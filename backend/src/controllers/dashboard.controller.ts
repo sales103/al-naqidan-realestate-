@@ -21,9 +21,9 @@ export const getDashboardStats = async (_req: Request, res: Response, next: Next
     };
 
     const [propertyStats, clientStats, conversationStats] = await Promise.all([
-      safe(() => propertyService.getStats(), { total: 0, available: 0, reserved: 0, sold: 0 }),
-      safe(() => clientService.getStats(), { total: 0, new: 0, closed_won: 0 }),
-      safe(() => conversationService.getStats(), { total: 0, active: 0, ai_handled: 0 }),
+      safe(() => propertyService.getStats(), { total: 0, available: 0, reserved: 0, sold: 0, by_type: {} as Record<string, number> }),
+      safe(() => clientService.getStats(), { total: 0, new: 0, active: 0, closed_won: 0, closed_lost: 0, by_status: {} as Record<string, number> }),
+      safe(() => conversationService.getStats(), { total_messages_today: 0, ai_responses_today: 0, active_conversations: 0 }),
     ]);
 
     // New clients today/week/month
