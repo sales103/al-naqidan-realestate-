@@ -9,15 +9,58 @@ import type {
 } from '../types/index.js';
 
 // =============================================================================
-// OpenAI / Groq Client (same OpenAI-compatible API)
+// AI Settings — read from DB first, fallback to env vars
 // =============================================================================
 
-const openai = new OpenAI({
-  apiKey: config.openai.apiKey,
-  ...(config.openai.baseUrl ? { baseURL: config.openai.baseUrl } : {}),
-});
+interface AISettings {
+  openai_key: string;
+  model: string;
+  base_url: string;
+  max_tokens: number;
+  temperature: number;
+  system_prompt: string;
+}
 
-const isGroq = config.openai.baseUrl?.includes('groq.com') ?? false;
+let _cachedSettings: AISettings | null = null;
+let _cacheExpiry = 0;
+
+async function getAISettings(): Promise<AISettings> {
+  const now = Date.now();
+  if (_cachedSettings && now < _cacheExpiry) return _cachedSettings;
+
+  try {
+    const db = getDatabase();
+    const row = await db('system_settings').where('key', 'ai').first();
+    if (row?.value?.openai_key) {
+      _cachedSettings = row.value as AISettings;
+      _cacheExpiry = now + 60_000; // cache 1 minute
+      return _cachedSettings;
+    }
+  } catch { /* fallback to env */ }
+
+  _cachedSettings = {
+    openai_key: config.openai.apiKey,
+    model: config.openai.model,
+    base_url: config.openai.baseUrl ?? 'https://api.openai.com/v1',
+    max_tokens: config.openai.maxTokens,
+    temperature: config.openai.temperature,
+    system_prompt: '',
+  };
+  _cacheExpiry = now + 60_000;
+  return _cachedSettings;
+}
+
+function buildClient(settings: AISettings): OpenAI {
+  return new OpenAI({
+    apiKey: settings.openai_key,
+    baseURL: settings.base_url,
+  });
+}
+
+export function clearAISettingsCache(): void {
+  _cachedSettings = null;
+  _cacheExpiry = 0;
+}
 
 // =============================================================================
 // System Prompt — Professional Saudi Real Estate AI
@@ -66,12 +109,16 @@ export const processMessage = async (
   const startTime = Date.now();
 
   try {
+    const settings = await getAISettings();
+    const openai = buildClient(settings);
+    const isGroqCall = settings.base_url?.includes('groq.com') ?? false;
+
     const historyMessages = buildConversationHistory(conversationHistory);
     const contextBlock = buildContextBlock(client, availableProperties);
+    const systemPrompt = settings.system_prompt || SYSTEM_PROMPT;
 
-    // Single call: extract intent + generate response simultaneously
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-      { role: 'system', content: SYSTEM_PROMPT + '\n\n' + contextBlock },
+      { role: 'system', content: systemPrompt + '\n\n' + contextBlock },
       ...historyMessages,
       {
         role: 'user',
@@ -80,16 +127,15 @@ export const processMessage = async (
     ];
 
     const completion = await openai.chat.completions.create({
-      model: config.openai.model,
+      model: settings.model,
       messages,
-      temperature: config.openai.temperature ?? 0.7,
-      max_tokens: config.openai.maxTokens ?? 600,
+      temperature: settings.temperature ?? 0.7,
+      max_tokens: settings.max_tokens ?? 600,
     });
 
     const rawOutput = completion.choices[0]?.message?.content ?? '';
     const { response, intent, extracted_data } = parseAIOutput(rawOutput, messageContent);
 
-    // Determine actions
     const shouldSendProperties =
       ['search_property', 'price_inquiry'].includes(intent.primary) &&
       (availableProperties?.length ?? 0) > 0;
@@ -109,9 +155,9 @@ export const processMessage = async (
       sentiment: extracted_data.sentiment ?? 'neutral',
       language: 'ar',
       tokens_used: tokens,
-      model: config.openai.model,
+      model: settings.model,
       response_time_ms: Date.now() - startTime,
-      cost_usd: calculateCost(tokens, config.openai.model),
+      cost_usd: calculateCost(tokens, settings.model),
     };
   } catch (error) {
     logger.error('AI processing error', { error, msg: messageContent.substring(0, 100) });
@@ -172,23 +218,14 @@ const parseAIOutput = (
 // =============================================================================
 
 export const transcribeAudio = async (audioBuffer: Buffer, mimeType: string): Promise<string> => {
-  if (isGroq) {
-    // Groq uses same Whisper API
-    const ext = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('mp4') ? 'mp4' : 'wav';
-    const file = new File([audioBuffer], `audio.${ext}`, { type: mimeType });
-    const transcription = await openai.audio.transcriptions.create({
-      file,
-      model: 'whisper-large-v3',
-      language: 'ar',
-      response_format: 'text',
-    });
-    return typeof transcription === 'string' ? transcription : (transcription as any).text ?? '';
-  }
+  const settings = await getAISettings();
+  const openai = buildClient(settings);
+  const isGroqCall = settings.base_url?.includes('groq.com') ?? false;
   const ext = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('mp4') ? 'mp4' : 'wav';
   const file = new File([audioBuffer], `audio.${ext}`, { type: mimeType });
   const transcription = await openai.audio.transcriptions.create({
     file,
-    model: config.openai.whisperModel ?? 'whisper-1',
+    model: isGroqCall ? 'whisper-large-v3' : (config.openai.whisperModel ?? 'whisper-1'),
     language: 'ar',
     response_format: 'text',
   });
@@ -201,7 +238,10 @@ export const transcribeAudio = async (audioBuffer: Buffer, mimeType: string): Pr
 
 export const analyzeImage = async (imageUrl: string, caption?: string): Promise<string> => {
   try {
-    const visionModel = isGroq ? 'meta-llama/llama-4-scout-17b-16e-instruct' : (config.openai.visionModel ?? config.openai.model);
+    const settings = await getAISettings();
+    const openai = buildClient(settings);
+    const isGroqCall = settings.base_url?.includes('groq.com') ?? false;
+    const visionModel = isGroqCall ? 'meta-llama/llama-4-scout-17b-16e-instruct' : (config.openai.visionModel ?? settings.model);
     const response = await openai.chat.completions.create({
       model: visionModel,
       messages: [{

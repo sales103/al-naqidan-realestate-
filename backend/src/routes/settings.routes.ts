@@ -3,6 +3,7 @@ import { authenticate } from '../middleware/auth.middleware.js';
 import { getDatabase } from '../database/connection.js';
 import { AppError } from '../middleware/error.middleware.js';
 import { z } from 'zod';
+import { clearAISettingsCache } from '../ai/agent.js';
 
 const router = Router();
 router.use(authenticate);
@@ -56,6 +57,8 @@ router.put('/:key', requireAdmin, async (req: Request, res: Response, next: Next
       .insert({ key: req.params['key'], value: JSON.stringify(value), description, updated_by: userId, updated_at: new Date() })
       .onConflict('key')
       .merge(['value', 'description', 'updated_by', 'updated_at']);
+
+    if (req.params['key'] === 'ai') clearAISettingsCache();
 
     res.json({ success: true, message: 'تم حفظ الإعدادات' });
   } catch (error) { next(error); }
