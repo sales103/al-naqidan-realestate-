@@ -122,11 +122,7 @@ export class ConversationService {
 
       if (!conversation.is_ai_enabled || conversation.ai_handoff_requested) return;
 
-      if (!this.isWithinWorkingHours()) {
-        await this.sendOutOfHoursMessage(client.phone);
-        return;
-      }
-
+      // Bot replies 24/7 with AI. Working hours only matter when handing off to a human.
       await this.handleFlow(message, client, conversation, payload, isNew);
     } catch (error) {
       logger.error('Webhook handling failed', { error });
@@ -456,17 +452,20 @@ export class ConversationService {
         searchSummary = this.buildSearchSummary(ctx, aiResult.extracted_data);
       }
 
+      let responseText = aiResult.response;
       if (aiResult.should_escalate) {
         await this.db('conversations').where('id', conversation.id).update({ ai_handoff_requested: true, updated_at: new Date() });
         await this.saveFlowContext(conversation.id, { ...ctx, state: 'escalated' });
         await this.notifyAgent(client, conversation, aiResult.escalation_reason);
+        // Only when a human takes over do working hours matter.
+        responseText = `${responseText}\n\n${this.handoffNote()}`;
       }
 
-      const outboundMsgId = await whatsappService.sendText(client.phone, aiResult.response);
+      const outboundMsgId = await whatsappService.sendText(client.phone, responseText);
       await this.saveMessage({
         conversation_id: conversation.id, whatsapp_message_id: outboundMsgId,
         direction: 'outbound', message_type: 'text', status: 'sent',
-        content: aiResult.response, is_from_ai: true,
+        content: responseText, is_from_ai: true,
       });
 
       if (properties.length > 0) {
@@ -562,11 +561,13 @@ export class ConversationService {
     return (mins >= 570 && mins < 720) || (mins >= 960 && mins < 1290);
   }
 
-  private async sendOutOfHoursMessage(phone: string): Promise<void> {
-    await whatsappService.sendText(
-      phone,
-      '🕐 شكراً لتواصلك!\n\nساعات العمل:\n🌅 صباحاً: 9:30 - 12:00\n🌆 مساءً: 4:00 - 9:30\n\nسيرد عليك فريقنا فور استئناف العمل. 🏠'
-    );
+  // Note appended when a conversation is handed off to a human agent.
+  // Within working hours → contacted shortly; outside → shown the working hours.
+  private handoffNote(): string {
+    if (this.isWithinWorkingHours()) {
+      return '👤 سيتواصل معك أحد مستشارينا خلال لحظات لمساعدتك. 🤝';
+    }
+    return '👤 سيتواصل معك أحد مستشارينا في أقرب وقت خلال ساعات العمل:\n🌅 صباحاً: 9:30 - 12:00\n🌆 مساءً: 4:00 - 9:30\n\nونحن سعداء بخدمتك دائماً. 🏠';
   }
 
   private async enrichSearchParams(params: PropertySearchParams, extracted: any, ctx: FlowContext): Promise<PropertySearchParams> {
