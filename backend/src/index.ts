@@ -55,9 +55,12 @@ app.use(helmet({
 // Check JWT blacklist on all authenticated routes
 app.use('/api', checkTokenBlacklist);
 
+// Allow the configured origins plus this project's Vercel domains
+// (production + preview deployments have generated *.vercel.app subdomains).
+const VERCEL_PROJECT = /^https:\/\/al-naqidan-realestate[a-z0-9-]*\.vercel\.app$/;
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || config.security.corsOrigins.includes(origin)) {
+    if (!origin || config.security.corsOrigins.includes(origin) || VERCEL_PROJECT.test(origin)) {
       callback(null, true);
     } else {
       callback(new Error(`CORS: Origin ${origin} not allowed`));
