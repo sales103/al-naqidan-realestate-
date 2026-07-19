@@ -66,17 +66,16 @@ export const createClient = async (req: Request, res: Response, next: NextFuncti
     const phone = data.phone.replace(/\D/g, '');
     const [client] = await db('clients').insert({
       full_name: data.full_name,
-      full_name_ar: data.full_name,
       phone,
       whatsapp_id: phone + '@s.whatsapp.net',
       email: data.email ?? null,
       budget_max: data.budget_max ?? null,
       purpose: data.purpose ?? 'buy',
-      preferred_property_types: data.preferred_property_types ? JSON.stringify(data.preferred_property_types) : null,
+      preferred_property_types: data.preferred_property_types ?? null,
       special_requirements: data.special_requirements ?? null,
+      notes: data.notes ?? null,
       status: data.status,
       source: data.source ?? 'manual',
-      ai_summary: data.notes ?? null,
       first_contact_at: new Date(),
     }).returning('*');
     res.status(201).json({ success: true, data: client });

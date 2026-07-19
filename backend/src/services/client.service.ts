@@ -204,7 +204,16 @@ export class ClientService {
       });
     }
 
-    const [{ count }] = await query.clone().clearSelect().count('cl.id as count') as any[];
+    const countQuery = this.db('clients as cl');
+    if (filters.status) countQuery.where('cl.status', filters.status);
+    if (filters.agent_id) countQuery.where('cl.assigned_agent_id', filters.agent_id);
+    if (filters.search) {
+      countQuery.where((qb: Knex.QueryBuilder) => {
+        qb.whereILike('cl.full_name', `%${filters.search}%`)
+          .orWhereILike('cl.phone', `%${filters.search}%`);
+      });
+    }
+    const [{ count }] = await countQuery.count('cl.id as count') as any[];
     const clients = await query.orderBy('cl.updated_at', 'desc').limit(limit).offset(offset) as Client[];
 
     return { clients, total: parseInt(count, 10) };
