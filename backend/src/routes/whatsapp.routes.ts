@@ -40,12 +40,33 @@ router.post('/connect/:instance', async (req: Request, res: Response, next: Next
       // If QR came directly in create response
       const directBase64 = createRes.data?.qrcode?.base64;
       if (directBase64) {
+        // Configure webhook in background
+        const backendUrl = process.env['BACKEND_URL'] ?? process.env['RAILWAY_STATIC_URL'];
+        if (backendUrl) {
+          axios.put(evoUrl(`/webhook/set/${instance}`), {
+            url: `${backendUrl}/api/webhooks/whatsapp`,
+            webhook_by_events: false,
+            webhook_base64: false,
+            events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE'],
+          }, { headers: evoHeaders() }).catch(() => {});
+        }
         res.json({ success: true, data: { base64: directBase64 } });
         return;
       }
 
       // Wait for instance to initialize
       await sleep(2000);
+    }
+
+    // Configure webhook
+    const backendUrl = process.env['BACKEND_URL'] ?? process.env['RAILWAY_STATIC_URL'];
+    if (backendUrl) {
+      axios.put(evoUrl(`/webhook/set/${instance}`), {
+        url: `${backendUrl}/api/webhooks/whatsapp`,
+        webhook_by_events: false,
+        webhook_base64: false,
+        events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE'],
+      }, { headers: evoHeaders() }).catch(() => {});
     }
 
     // Get QR code
