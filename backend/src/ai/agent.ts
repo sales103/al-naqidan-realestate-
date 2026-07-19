@@ -386,7 +386,8 @@ ${client.special_requirements ? `- متطلبات خاصة: ${client.special_req
 
   const propertiesInfo = properties?.length
     ? `\nعقارات متاحة ومطابقة (اذكر تفاصيلها في ردك):\n${properties.slice(0, 5).map((p, i) => {
-        const type = { land:'أرض', apartment:'شقة', villa:'فيلا', building:'عمارة', office:'مكتب', showroom:'معرض', warehouse:'مستودع', farm:'مزرعة' }[p.property_type ?? ''] ?? 'عقار';
+        const typeMap: Record<string, string> = { land:'أرض', apartment:'شقة', villa:'فيلا', building:'عمارة', office:'مكتب', showroom:'معرض', warehouse:'مستودع', farm:'مزرعة', investment_project:'مشروع استثماري', other:'أخرى' };
+        const type = typeMap[p.property_type ?? ''] ?? 'عقار';
         const location = [p.district_name, p.city_name].filter(Boolean).join(' - ');
         const area = p.area_sqm ? ` | ${p.area_sqm} م²` : '';
         const rooms = p.rooms ? ` | ${p.rooms} غرف` : '';
