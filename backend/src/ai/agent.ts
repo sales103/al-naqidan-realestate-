@@ -150,7 +150,7 @@ export const processMessage = async (
 // Intent Extraction
 // =============================================================================
 
-const extractIntentAndEntities = async (
+export const extractIntentAndEntities = async (
   messageContent: string
 ): Promise<{
   intent: AIIntent;
@@ -197,7 +197,7 @@ const extractIntentAndEntities = async (
 // Response Generation
 // =============================================================================
 
-const generateResponse = async (
+export const generateResponse = async (
   userMessage: string,
   historyMessages: OpenAI.Chat.ChatCompletionMessageParam[],
   contextMessage: string,
@@ -385,7 +385,13 @@ ${client.special_requirements ? `- متطلبات خاصة: ${client.special_req
 `;
 
   const propertiesInfo = properties?.length
-    ? `\nالعقارات المتاحة للعرض:\n${properties.slice(0, 5).map((p) => `- ${p.title_ar ?? p.title} (${p.code}) - ${p.price?.toLocaleString('ar-SA')} ريال`).join('\n')}`
+    ? `\nعقارات متاحة ومطابقة (اذكر تفاصيلها في ردك):\n${properties.slice(0, 5).map((p, i) => {
+        const type = { land:'أرض', apartment:'شقة', villa:'فيلا', building:'عمارة', office:'مكتب', showroom:'معرض', warehouse:'مستودع', farm:'مزرعة' }[p.property_type ?? ''] ?? 'عقار';
+        const location = [p.district_name, p.city_name].filter(Boolean).join(' - ');
+        const area = p.area_sqm ? ` | ${p.area_sqm} م²` : '';
+        const rooms = p.rooms ? ` | ${p.rooms} غرف` : '';
+        return `${i+1}. ${type}: ${p.title_ar ?? p.title} | 💰 ${p.price?.toLocaleString('ar-SA')} ريال${area}${rooms} | 📍 ${location} | كود: ${p.code}`;
+      }).join('\n')}\n\nمهم: ضمّن تفاصيل هذه العقارات في ردك بشكل طبيعي ومنظّم.`
     : '';
 
   return timeCtx + '\n' + clientInfo + propertiesInfo;

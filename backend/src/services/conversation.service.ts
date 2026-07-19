@@ -141,8 +141,24 @@ export class ConversationService {
       // Get conversation history
       const history = await this.getConversationHistory(conversation.id, 10);
 
-      // AI Processing
-      const aiResult = await processMessage(messageContent, client, history);
+      // Pre-search properties based on keywords before calling AI
+      // so the AI can mention real property details in its response
+      const searchTriggers = ['شقة','فيلا','أرض','عقار','غرف','ميزانية','سعر','إيجار','شراء','بيع','مساحة','حي','دور','استثمار','تجاري','سكني','مكتب'];
+      let preloadedProperties: any[] = [];
+      if (searchTriggers.some((kw) => messageContent.includes(kw))) {
+        try {
+          const clientBudget = (client as any).budget_max;
+          const clientTypes: string[] = (client as any).preferred_property_types ?? [];
+          const params: any = { status: 'available', limit: 5, sort_by: 'featured' };
+          if (clientBudget) params.price_max = clientBudget;
+          if (clientTypes.length > 0) params.property_type = clientTypes[0];
+          const preResult = await propertyService.search(params);
+          preloadedProperties = preResult.properties;
+        } catch { /* continue without properties */ }
+      }
+
+      // AI Processing — pass pre-fetched properties so AI mentions them in its response
+      const aiResult = await processMessage(messageContent, client, history, preloadedProperties.length > 0 ? preloadedProperties : undefined);
 
       // Update client profile from AI extraction
       if (aiResult.extracted_data) {
