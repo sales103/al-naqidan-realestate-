@@ -85,13 +85,6 @@ export const conversationsApi = {
   toggleAI: (id: string) => api.patch(`/conversations/${id}/toggle-ai`),
 };
 
-// --- Deals ---
-export const dealsApi = {
-  list:         (params?: Record<string, any>) => api.get('/deals', { params }),
-  create:       (data: any)                    => api.post('/deals', data),
-  updateStatus: (id: string, status: string)   => api.patch(`/deals/${id}/status`, { status }),
-};
-
 // --- Notifications ---
 export const notificationsApi = {
   list:        ()            => api.get('/notifications'),

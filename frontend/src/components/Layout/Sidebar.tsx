@@ -2,8 +2,7 @@
 import {
   HomeIcon, BuildingOfficeIcon, UsersIcon,
   ChatBubbleLeftRightIcon, ChartBarIcon,
-  XMarkIcon, TableCellsIcon, UserGroupIcon,
-  BriefcaseIcon, Cog6ToothIcon, DevicePhoneMobileIcon,
+  XMarkIcon, TableCellsIcon, UserGroupIcon, Cog6ToothIcon, DevicePhoneMobileIcon,
 } from '@heroicons/react/24/outline';
 import { useAuthStore } from '../../store/auth.store.ts';
 import { useCompanyStore } from '../../store/company.store.ts';
@@ -12,7 +11,6 @@ const navMain = [
   { to: '/dashboard',     icon: HomeIcon,                  label: 'لوحة التحكم' },
   { to: '/properties',    icon: BuildingOfficeIcon,         label: 'العقارات' },
   { to: '/clients',       icon: UsersIcon,                  label: 'العملاء' },
-  { to: '/deals',         icon: BriefcaseIcon,              label: 'الصفقات' },
   { to: '/conversations', icon: ChatBubbleLeftRightIcon,    label: 'المحادثات' },
   { to: '/reports',       icon: ChartBarIcon,               label: 'التقارير' },
 ];
