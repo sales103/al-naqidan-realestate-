@@ -200,7 +200,7 @@ export const register = async (req: Request, res: Response, next: NextFunction):
     if (exists) throw new AppError(400, 'هذا البريد مسجل بالفعل');
 
     const hash = await bcrypt.hash(password, config.auth.bcryptRounds);
-    const [user] = await db('users').insert({
+    const inserted = await db('users').insert({
       email,
       full_name,
       full_name_ar: full_name_ar ?? full_name,
@@ -208,6 +208,8 @@ export const register = async (req: Request, res: Response, next: NextFunction):
       role: 'sales_agent',
       is_active: false,
     }).returning('*') as User[];
+    const user = inserted[0];
+    if (!user) throw new AppError(500, 'فشل إنشاء الحساب');
 
     await cacheDel(`verified:register:${verified_token}`);
 
