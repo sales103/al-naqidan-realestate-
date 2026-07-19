@@ -1,15 +1,15 @@
-import { Router, Request, Response, NextFunction } from 'express';
+﻿import { Router, Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { getDatabase } from '../database/connection.js';
 
 const router = Router();
 router.use(authenticate);
 
-// GET /api/notifications — list my unread notifications
+// GET /api/notifications â€” list my unread notifications
 router.get('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const db = getDatabase();
-    const userId = (req as any).user?.id;
+    const userId = (req as any).user?.user_id;
     const notifications = await db('notifications')
       .where('user_id', userId)
       .orderBy('created_at', 'desc')
@@ -32,7 +32,7 @@ router.patch('/:id/read', async (req: Request, res: Response, next: NextFunction
 router.patch('/read-all', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const db = getDatabase();
-    const userId = (req as any).user?.id;
+    const userId = (req as any).user?.user_id;
     await db('notifications').where('user_id', userId).whereNull('read_at').update({ read_at: new Date() });
     res.json({ success: true });
   } catch (error) { next(error); }

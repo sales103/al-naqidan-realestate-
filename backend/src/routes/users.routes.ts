@@ -99,7 +99,7 @@ router.delete('/:id', authorize('super_admin', 'admin'), async (req: Request, re
   try {
     const { id } = req.params;
     const reqUser = (req as any).user;
-    if (reqUser.id === id) { res.status(400).json({ success: false, error: 'لا يمكنك حذف حسابك' }); return; }
+    if (reqUser.user_id === id) { res.status(400).json({ success: false, error: 'لا يمكنك حذف حسابك' }); return; }
     const db = getDatabase();
     await db('users').where('id', id).update({ is_active: false, updated_at: new Date() });
     res.json({ success: true, message: 'تم تعطيل المستخدم' });

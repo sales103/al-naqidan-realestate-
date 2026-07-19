@@ -21,6 +21,9 @@ import { requestId, checkTokenBlacklist, metricsGuard } from './middleware/secur
 
 const app = express();
 
+// Trust Railway/Vercel reverse proxy
+app.set('trust proxy', 1);
+
 // =============================================================================
 // Security Middleware
 // =============================================================================
