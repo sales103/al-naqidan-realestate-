@@ -11,12 +11,17 @@ const evoUrl = (path: string) => `${config.whatsapp.evolutionUrl}${path}`;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// Check if instance exists
+// Check if instance exists (handles Evolution API v1 and v2 response shapes)
 async function instanceExists(name: string): Promise<boolean> {
   try {
     const r = await axios.get(evoUrl('/instance/fetchInstances'), { headers: evoHeaders() });
     const list: any[] = r.data ?? [];
-    return list.some((i: any) => i.instance?.instanceName === name || i.instanceName === name);
+    return list.some((i: any) =>
+      i.name === name ||                     // v2: { name: "..." }
+      i.instanceName === name ||             // v1 flat
+      i.instance?.instanceName === name ||   // v1 nested
+      i.instance?.name === name,
+    );
   } catch {
     return false;
   }
@@ -30,32 +35,38 @@ router.post('/connect/:instance', async (req: Request, res: Response, next: Next
     const exists = await instanceExists(instance);
 
     if (!exists) {
-      // Create instance
-      const createRes = await axios.post(evoUrl('/instance/create'), {
-        instanceName: instance,
-        qrcode: true,
-        integration: 'WHATSAPP-BAILEYS',
-      }, { headers: evoHeaders() });
+      // Create instance — but tolerate "already in use" (race / stale existence check)
+      try {
+        const createRes = await axios.post(evoUrl('/instance/create'), {
+          instanceName: instance,
+          qrcode: true,
+          integration: 'WHATSAPP-BAILEYS',
+        }, { headers: evoHeaders() });
 
-      // If QR came directly in create response
-      const directBase64 = createRes.data?.qrcode?.base64;
-      if (directBase64) {
-        // Configure webhook in background
-        const backendUrl = process.env['BACKEND_URL'] ?? process.env['RAILWAY_STATIC_URL'];
-        if (backendUrl) {
-          axios.put(evoUrl(`/webhook/set/${instance}`), {
-            url: `${backendUrl}/api/webhooks/whatsapp`,
-            webhook_by_events: false,
-            webhook_base64: false,
-            events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE'],
-          }, { headers: evoHeaders() }).catch(() => {});
+        // If QR came directly in create response
+        const directBase64 = createRes.data?.qrcode?.base64;
+        if (directBase64) {
+          // Configure webhook in background
+          const backendUrl = process.env['BACKEND_URL'] ?? process.env['RAILWAY_STATIC_URL'];
+          if (backendUrl) {
+            axios.put(evoUrl(`/webhook/set/${instance}`), {
+              url: `${backendUrl}/api/webhooks/whatsapp`,
+              webhook_by_events: false,
+              webhook_base64: false,
+              events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE'],
+            }, { headers: evoHeaders() }).catch(() => {});
+          }
+          res.json({ success: true, data: { base64: directBase64 } });
+          return;
         }
-        res.json({ success: true, data: { base64: directBase64 } });
-        return;
-      }
 
-      // Wait for instance to initialize
-      await sleep(2000);
+        // Wait for instance to initialize
+        await sleep(2000);
+      } catch (createErr: any) {
+        // 403 "already in use" means the instance exists after all — just connect to it
+        const alreadyInUse = createErr?.response?.status === 403;
+        if (!alreadyInUse) throw createErr;
+      }
     }
 
     // Configure webhook
