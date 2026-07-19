@@ -16,80 +16,78 @@ export const getDashboardStats = async (_req: Request, res: Response, next: Next
     const week = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
     const month = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-    const [
-      propertyStats,
-      clientStats,
-      conversationStats,
-    ] = await Promise.all([
-      propertyService.getStats(),
-      clientService.getStats(),
-      conversationService.getStats(),
+    const safe = async <T>(fn: () => Promise<T>, fallback: T): Promise<T> => {
+      try { return await fn(); } catch { return fallback; }
+    };
+
+    const [propertyStats, clientStats, conversationStats] = await Promise.all([
+      safe(() => propertyService.getStats(), { total: 0, available: 0, reserved: 0, sold: 0 }),
+      safe(() => clientService.getStats(), { total: 0, new: 0, closed_won: 0 }),
+      safe(() => conversationService.getStats(), { total: 0, active: 0, ai_handled: 0 }),
     ]);
 
     // New clients today/week/month
-    const [{ today_clients, week_clients, month_clients }] = await db('clients').select(
-      db.raw('COUNT(*) FILTER (WHERE created_at >= ?) as today_clients', [today]),
-      db.raw('COUNT(*) FILTER (WHERE created_at >= ?) as week_clients', [week]),
-      db.raw('COUNT(*) FILTER (WHERE created_at >= ?) as month_clients', [month])
-    ) as any[];
+    const clientCounts = await safe(async () => {
+      const [row] = await db('clients').select(
+        db.raw('COUNT(*) FILTER (WHERE created_at >= ?) as today_clients', [today]),
+        db.raw('COUNT(*) FILTER (WHERE created_at >= ?) as week_clients', [week]),
+        db.raw('COUNT(*) FILTER (WHERE created_at >= ?) as month_clients', [month])
+      ) as any[];
+      return row;
+    }, { today_clients: 0, week_clients: 0, month_clients: 0 });
 
     // Deals
-    const [dealStats] = await db('deals').select(
-      db.raw('COUNT(*) as total'),
-      db.raw("COUNT(*) FILTER (WHERE status = 'active') as active"),
-      db.raw("COUNT(*) FILTER (WHERE status = 'completed') as completed"),
-      db.raw("SUM(agreed_price) FILTER (WHERE status = 'completed') as total_revenue")
-    ) as any[];
+    const dealStats = await safe(async () => {
+      const [row] = await db('deals').select(
+        db.raw('COUNT(*) as total'),
+        db.raw("COUNT(*) FILTER (WHERE status IN ('active','open','in_progress')) as active"),
+        db.raw("COUNT(*) FILTER (WHERE status IN ('completed','closed','won')) as completed"),
+        db.raw('SUM(COALESCE(agreed_price, final_price, price, 0)) FILTER (WHERE status IN (\'completed\',\'closed\',\'won\')) as total_revenue')
+      ) as any[];
+      return row;
+    }, { total: 0, active: 0, completed: 0, total_revenue: 0 });
 
     // Top properties by inquiry
-    const topProperties = await db('properties as p')
-      .leftJoin('cities as c', 'p.city_id', 'c.id')
-      .select('p.id', 'p.code', 'p.title_ar', 'p.inquiry_count', 'p.view_count', 'c.name_ar as city')
-      .where('p.status', 'available')
-      .orderBy('p.inquiry_count', 'desc')
-      .limit(5);
+    const topProperties = await safe(() =>
+      db('properties as p')
+        .leftJoin('cities as c', 'p.city_id', 'c.id')
+        .select('p.id', 'p.title_ar', 'p.inquiry_count', 'p.view_count', 'c.name_ar as city')
+        .where('p.status', 'available')
+        .orderBy('p.inquiry_count', 'desc')
+        .limit(5)
+    , []);
 
-    // Top districts
-    const topDistricts = await db('properties as p')
-      .leftJoin('districts as d', 'p.district_id', 'd.id')
-      .select('d.name_ar as district')
-      .count('p.id as count')
-      .where('p.status', 'available')
-      .groupBy('d.name_ar')
-      .orderBy('count', 'desc')
-      .limit(5);
+    // Message chart (last 7 days)
+    const messageChart = await safe(() =>
+      db('messages')
+        .select(db.raw('DATE(created_at) as date'), db.raw('COUNT(*) as count'))
+        .where('created_at', '>=', week)
+        .groupByRaw('DATE(created_at)')
+        .orderBy('date')
+    , []);
 
-    // Monthly messages chart (last 7 days)
-    const messageChart = await db('messages')
-      .select(db.raw('DATE(created_at) as date'), db.raw('COUNT(*) as count'))
-      .where('created_at', '>=', week)
-      .groupByRaw('DATE(created_at)')
-      .orderBy('date');
-
-    // Conversion rate
-    const totalClients = clientStats.total;
-    const convertedClients = clientStats.closed_won;
+    const totalClients = (clientStats as any).total ?? 0;
+    const convertedClients = (clientStats as any).closed_won ?? 0;
     const conversionRate = totalClients > 0 ? (convertedClients / totalClients) * 100 : 0;
 
     const data = {
       properties: propertyStats,
       clients: {
         ...clientStats,
-        new_today: parseInt(today_clients, 10),
-        new_this_week: parseInt(week_clients, 10),
-        new_this_month: parseInt(month_clients, 10),
+        new_today: parseInt(String(clientCounts.today_clients), 10) || 0,
+        new_this_week: parseInt(String(clientCounts.week_clients), 10) || 0,
+        new_this_month: parseInt(String(clientCounts.month_clients), 10) || 0,
       },
       conversations: conversationStats,
       deals: {
-        total: parseInt(dealStats.total, 10),
-        active: parseInt(dealStats.active, 10),
-        completed: parseInt(dealStats.completed, 10),
-        total_revenue: parseFloat(dealStats.total_revenue ?? 0),
+        total: parseInt(String(dealStats.total), 10) || 0,
+        active: parseInt(String(dealStats.active), 10) || 0,
+        completed: parseInt(String(dealStats.completed), 10) || 0,
+        total_revenue: parseFloat(String(dealStats.total_revenue ?? 0)) || 0,
       },
       analytics: {
         conversion_rate: Math.round(conversionRate * 100) / 100,
         top_properties: topProperties,
-        top_districts: topDistricts,
         message_chart: messageChart,
       },
       generated_at: new Date(),
