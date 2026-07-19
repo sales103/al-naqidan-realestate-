@@ -11,6 +11,24 @@ const evoUrl = (path: string) => `${config.whatsapp.evolutionUrl}${path}`;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Register the incoming-message webhook on Evolution (v2 format: POST + nested "webhook").
+// Runs in the background; failures are logged but never block the connect flow.
+function setWebhook(instance: string): void {
+  const backendUrl = config.whatsapp.backendUrl;
+  if (!backendUrl) return;
+  axios.post(evoUrl(`/webhook/set/${instance}`), {
+    webhook: {
+      enabled: true,
+      url: `${backendUrl}/api/webhooks/whatsapp`,
+      webhookByEvents: false,
+      webhookBase64: false,
+      events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE'],
+    },
+  }, { headers: evoHeaders() }).catch((err: any) => {
+    console.error('[WA webhook set failed]', instance, err?.response?.status, err?.response?.data?.message ?? err?.message);
+  });
+}
+
 // Check if instance exists (handles Evolution API v1 and v2 response shapes)
 async function instanceExists(name: string): Promise<boolean> {
   try {
@@ -46,16 +64,7 @@ router.post('/connect/:instance', async (req: Request, res: Response, next: Next
         // If QR came directly in create response
         const directBase64 = createRes.data?.qrcode?.base64;
         if (directBase64) {
-          // Configure webhook in background
-          const backendUrl = process.env['BACKEND_URL'] ?? process.env['RAILWAY_STATIC_URL'];
-          if (backendUrl) {
-            axios.put(evoUrl(`/webhook/set/${instance}`), {
-              url: `${backendUrl}/api/webhooks/whatsapp`,
-              webhook_by_events: false,
-              webhook_base64: false,
-              events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE'],
-            }, { headers: evoHeaders() }).catch(() => {});
-          }
+          setWebhook(instance);
           res.json({ success: true, data: { base64: directBase64 } });
           return;
         }
@@ -70,15 +79,7 @@ router.post('/connect/:instance', async (req: Request, res: Response, next: Next
     }
 
     // Configure webhook
-    const backendUrl = process.env['BACKEND_URL'] ?? process.env['RAILWAY_STATIC_URL'];
-    if (backendUrl) {
-      axios.put(evoUrl(`/webhook/set/${instance}`), {
-        url: `${backendUrl}/api/webhooks/whatsapp`,
-        webhook_by_events: false,
-        webhook_base64: false,
-        events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE'],
-      }, { headers: evoHeaders() }).catch(() => {});
-    }
+    setWebhook(instance);
 
     // Get QR code
     const qrRes = await axios.get(evoUrl(`/instance/connect/${instance}`), { headers: evoHeaders() });

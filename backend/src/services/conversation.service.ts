@@ -87,7 +87,9 @@ export class ConversationService {
 
   async handleWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
     try {
-      if (payload.event !== 'messages.upsert') return;
+      // Evolution may send the event as 'messages.upsert' (v2) or 'MESSAGES_UPSERT'
+      const event = String(payload.event ?? '').toLowerCase().replace(/_/g, '.');
+      if (event !== 'messages.upsert') return;
       if (payload.data.key.fromMe) return;
       const chatId = payload.data.key.remoteJid;
       if (!chatId || chatId.includes('@g.us')) return;

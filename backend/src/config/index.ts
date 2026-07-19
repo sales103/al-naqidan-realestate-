@@ -66,6 +66,13 @@ export const config = {
     evolutionApiKey: optionalEnv('EVOLUTION_API_KEY', ''),
     instanceName: optionalEnv('EVOLUTION_INSTANCE_NAME', 'naqidan-whatsapp'),
     phoneNumber: optionalEnv('WHATSAPP_PHONE_NUMBER', ''),
+    // Public URL of THIS backend, used to register the Evolution webhook.
+    // Falls back to Railway's public domain if BACKEND_URL isn't set explicitly.
+    backendUrl:
+      optionalEnv('BACKEND_URL', '') ||
+      (process.env['RAILWAY_PUBLIC_DOMAIN']
+        ? `https://${process.env['RAILWAY_PUBLIC_DOMAIN']}`
+        : optionalEnv('RAILWAY_STATIC_URL', '')),
   },
 
   n8n: {
