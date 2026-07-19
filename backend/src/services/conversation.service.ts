@@ -511,7 +511,12 @@ export class ConversationService {
   }
 
   async saveMessage(data: Partial<Message>): Promise<Message> {
-    const [msg] = await this.db('messages').insert(data).returning('*') as Message[];
+    // Knex throws "Undefined binding(s) detected" if any value is undefined
+    // (e.g. media/location fields on a plain text message). Strip them first.
+    const clean = Object.fromEntries(
+      Object.entries(data).filter(([, v]) => v !== undefined)
+    );
+    const [msg] = await this.db('messages').insert(clean).returning('*') as Message[];
     if (!msg) throw new Error('Failed to save message');
     return msg;
   }
