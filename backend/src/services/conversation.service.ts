@@ -104,8 +104,13 @@ export class ConversationService {
       const phone = chatId.replace('@s.whatsapp.net', '');
       const whatsappMessageId = payload.data.key.id;
 
-      const existing = await this.db('messages').where('whatsapp_message_id', whatsappMessageId).first();
-      if (existing) return;
+      // Duplicate check is an optimisation — never let it block a reply.
+      try {
+        const existing = await this.db('messages').where('whatsapp_message_id', whatsappMessageId).first();
+        if (existing) return;
+      } catch (e: any) {
+        logger.warn('dedup check skipped', { error: e?.message });
+      }
 
       const { client, isNew } = await clientService.findOrCreateByWhatsapp(chatId, phone, payload.data.pushName);
       const conversation = await this.findOrCreateConversation(client.id, chatId);
@@ -113,23 +118,38 @@ export class ConversationService {
       (conversation as any).wa_instance = payload.instance || config.whatsapp.instanceName;
       const { content, messageType, mediaUrl, mimeType, lat, lng, locationName } = this.extractMessageContent(payload);
 
-      const message = await this.saveMessage({
-        conversation_id: conversation.id,
-        whatsapp_message_id: whatsappMessageId,
-        direction: 'inbound',
-        message_type: messageType,
-        status: 'delivered',
-        content,
-        media_url: mediaUrl,
-        media_mime_type: mimeType,
-        location_lat: lat,
-        location_lng: lng,
-        location_name: locationName,
-      });
+      // Persisting the message must not stop us from answering the customer.
+      let message: Message;
+      try {
+        message = await this.saveMessage({
+          conversation_id: conversation.id,
+          whatsapp_message_id: whatsappMessageId,
+          direction: 'inbound',
+          message_type: messageType,
+          status: 'delivered',
+          content,
+          media_url: mediaUrl,
+          media_mime_type: mimeType,
+          location_lat: lat,
+          location_lng: lng,
+          location_name: locationName,
+        });
+      } catch (e: any) {
+        logger.error('saveMessage failed — continuing without persistence', { error: e?.message });
+        message = {
+          conversation_id: conversation.id,
+          whatsapp_message_id: whatsappMessageId,
+          direction: 'inbound',
+          message_type: messageType,
+          status: 'delivered',
+          content,
+        } as unknown as Message;
+      }
 
       await whatsappService.markAsRead(whatsappMessageId, chatId, this.waInstance(conversation));
 
-      if (!conversation.is_ai_enabled || conversation.ai_handoff_requested) return;
+      // Only an explicit false disables the AI — a missing column must not silence the bot.
+      if (conversation.is_ai_enabled === false || conversation.ai_handoff_requested === true) return;
 
       // Bot replies 24/7 with AI. Working hours only matter when handing off to a human.
       await this.handleFlow(message, client, conversation, payload, isNew);
