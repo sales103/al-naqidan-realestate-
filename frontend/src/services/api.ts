@@ -49,6 +49,24 @@ export const propertiesApi = {
   districts: (cityId: number) => api.get(`/properties/cities/${cityId}/districts`),
 };
 
+// ─── Uploads ─────────────────────────────────────────────────────────────────
+export const uploadsApi = {
+  image: (file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post<{ success: boolean; data: { url: string } }>('/uploads/image', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+  images: (files: File[]) => {
+    const form = new FormData();
+    files.forEach((f) => form.append('files', f));
+    return api.post<{ success: boolean; data: { urls: string[] } }>('/uploads/images', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+};
+
 // ─── Clients ─────────────────────────────────────────────────────────────────
 export const clientsApi = {
   list: (params?: Record<string, any>) => api.get('/clients', { params }),

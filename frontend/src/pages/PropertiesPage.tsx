@@ -6,7 +6,7 @@ import {
   StarIcon, FunnelIcon,
 } from '@heroicons/react/24/outline';
 import { StarIcon as StarSolid } from '@heroicons/react/24/solid';
-import { propertiesApi } from '../services/api.ts';
+import { propertiesApi, uploadsApi } from '../services/api.ts';
 import toast from 'react-hot-toast';
 
 const propertyTypeLabels: Record<string, string> = {
@@ -56,6 +56,7 @@ function PropertyModal({ property, onClose }: { property?: any; onClose: () => v
   } : { ...emptyForm });
 
   const [newImageUrl, setNewImageUrl] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
 
   const addImage = () => {
@@ -66,6 +67,34 @@ function PropertyModal({ property, onClose }: { property?: any; onClose: () => v
   };
   const removeImage = (i: number) =>
     set('extra_images', form.extra_images.filter((_, idx) => idx !== i));
+
+  // Uploads go straight to Cloudinary via the backend — Railway wipes local
+  // disk on every redeploy, so a URL that survives has to come from there.
+  const handleFilesPicked = async (fileList: FileList | null) => {
+    if (!fileList?.length) return;
+    const files = Array.from(fileList).slice(0, 10);
+    setIsUploading(true);
+    try {
+      if (!form.main_image_url && files.length === 1) {
+        const { data } = await uploadsApi.image(files[0]!);
+        set('main_image_url', data.data.url);
+      } else {
+        const { data } = await uploadsApi.images(files);
+        if (!form.main_image_url) {
+          const [first, ...rest] = data.data.urls;
+          set('main_image_url', first);
+          set('extra_images', [...form.extra_images, ...rest]);
+        } else {
+          set('extra_images', [...form.extra_images, ...data.data.urls]);
+        }
+      }
+      toast.success(files.length > 1 ? `تم رفع ${files.length} صور` : 'تم رفع الصورة');
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error ?? 'فشل رفع الصورة');
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const createMut = useMutation({
     mutationFn: (data: any) => propertiesApi.create(data),
@@ -136,23 +165,18 @@ function PropertyModal({ property, onClose }: { property?: any; onClose: () => v
                 </span>
               </div>
             ) : (
-              <div className="h-36 rounded-xl bg-gray-50 border-2 border-dashed border-gray-200 flex items-center justify-center">
+              <label className={`h-36 rounded-xl bg-gray-50 border-2 border-dashed flex items-center justify-center cursor-pointer transition-colors ${isUploading ? 'border-primary-300 bg-primary-50' : 'border-gray-200 hover:border-primary-300 hover:bg-primary-50/40'}`}>
+                <input
+                  type="file" accept="image/jpeg,image/png,image/webp" multiple
+                  className="hidden" disabled={isUploading}
+                  onChange={(e) => { void handleFilesPicked(e.target.files); e.target.value = ''; }}
+                />
                 <div className="text-center text-gray-400">
                   <PhotoIcon className="w-9 h-9 mx-auto mb-1.5" />
-                  <p className="text-sm">أضف رابط صورة رئيسية</p>
+                  <p className="text-sm">{isUploading ? 'جارِ الرفع...' : 'اضغط لرفع صور من جهازك'}</p>
                 </div>
-              </div>
+              </label>
             )}
-
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">الصورة الرئيسية (رابط URL)</label>
-              <input
-                className="input w-full text-sm" dir="ltr"
-                value={form.main_image_url}
-                onChange={(e) => set('main_image_url', e.target.value)}
-                placeholder="https://example.com/image.jpg"
-              />
-            </div>
 
             {form.extra_images.length > 0 && (
               <div className="flex flex-wrap gap-2">
@@ -169,19 +193,34 @@ function PropertyModal({ property, onClose }: { property?: any; onClose: () => v
               </div>
             )}
 
-            <div className="flex gap-2">
-              <input
-                className="input flex-1 text-sm" dir="ltr"
-                value={newImageUrl}
-                onChange={(e) => setNewImageUrl(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addImage())}
-                placeholder="رابط صورة إضافية..."
-              />
-              <button type="button" onClick={addImage}
-                className="btn-secondary px-4 text-sm whitespace-nowrap">
-                + إضافة
-              </button>
-            </div>
+            {previewImage && (
+              <label className={`flex items-center justify-center gap-2 h-11 rounded-lg border border-dashed text-sm cursor-pointer transition-colors ${isUploading ? 'border-primary-300 text-primary-500 bg-primary-50' : 'border-gray-200 text-gray-500 hover:border-primary-300 hover:bg-primary-50/40'}`}>
+                <input
+                  type="file" accept="image/jpeg,image/png,image/webp" multiple
+                  className="hidden" disabled={isUploading}
+                  onChange={(e) => { void handleFilesPicked(e.target.files); e.target.value = ''; }}
+                />
+                <PhotoIcon className="w-4 h-4" />
+                {isUploading ? 'جارِ الرفع...' : '+ رفع صور إضافية'}
+              </label>
+            )}
+
+            <details className="text-xs text-gray-500">
+              <summary className="cursor-pointer select-none hover:text-gray-700">أو أضف رابط صورة جاهز (اختياري)</summary>
+              <div className="flex gap-2 mt-2">
+                <input
+                  className="input flex-1 text-sm" dir="ltr"
+                  value={newImageUrl}
+                  onChange={(e) => setNewImageUrl(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addImage())}
+                  placeholder="https://example.com/image.jpg"
+                />
+                <button type="button" onClick={addImage}
+                  className="btn-secondary px-4 text-sm whitespace-nowrap">
+                  + إضافة
+                </button>
+              </div>
+            </details>
           </div>
 
           <div className="border-t pt-5 space-y-4">

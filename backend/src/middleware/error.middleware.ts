@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { logger } from '../config/logger.js';
 import { config } from '../config/index.js';
 import { ZodError } from 'zod';
+import multer from 'multer';
 
 export class AppError extends Error {
   constructor(
@@ -27,6 +28,21 @@ export const errorHandler = (
       error: err.message,
       code: err.code,
     });
+    return;
+  }
+
+  // Multer rejects oversized/wrong-type uploads with its own error type. The
+  // generic 500 handler below hides the message in production — a photo that
+  // is "too large" or "wrong format" needs to reach the person uploading it.
+  if (err instanceof multer.MulterError) {
+    const message = err.code === 'LIMIT_FILE_SIZE'
+      ? 'حجم الصورة كبير جداً — الحد الأقصى 8 ميجابايت'
+      : err.message;
+    res.status(400).json({ success: false, error: message });
+    return;
+  }
+  if (err.message?.includes('صيغة غير مدعومة')) {
+    res.status(400).json({ success: false, error: err.message });
     return;
   }
 

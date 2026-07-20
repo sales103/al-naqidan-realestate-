@@ -89,6 +89,12 @@ export const config = {
     allowedDocTypes: optionalEnv('ALLOWED_DOC_TYPES', 'pdf').split(','),
   },
 
+  cloudinary: {
+    cloudName: optionalEnv('CLOUDINARY_CLOUD_NAME', ''),
+    apiKey: optionalEnv('CLOUDINARY_API_KEY', ''),
+    apiSecret: optionalEnv('CLOUDINARY_API_SECRET', ''),
+  },
+
   frontendUrl: optionalEnv('FRONTEND_URL', 'http://localhost:5173'),
 
   smtp: {
