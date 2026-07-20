@@ -201,7 +201,15 @@ export class ConversationService {
       await whatsappService.markAsRead(whatsappMessageId, chatId, this.waInstance(conversation));
 
       // Only an explicit false disables the AI — a missing column must not silence the bot.
-      if (conversation.is_ai_enabled === false || conversation.ai_handoff_requested === true) return;
+      if (conversation.is_ai_enabled === false || conversation.ai_handoff_requested === true) {
+        // Log it: a silent return is impossible to diagnose from the outside.
+        logger.info('AI reply skipped', {
+          conversationId: conversation.id,
+          is_ai_enabled: conversation.is_ai_enabled,
+          handoff: conversation.ai_handoff_requested,
+        });
+        return;
+      }
 
       // Bot replies 24/7 with AI. Working hours only matter when handing off to a human.
       await this.handleFlow(message, client, conversation, payload, isNew);
