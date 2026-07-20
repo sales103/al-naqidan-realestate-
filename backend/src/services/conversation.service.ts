@@ -592,6 +592,8 @@ export class ConversationService {
       const aiResult = await processMessage(messageContent, client, history, preloadedProperties.length > 0 ? preloadedProperties : undefined);
 
       if (aiResult.extracted_data) {
+        // Enriching the client profile is a side effect — never let it stop the reply.
+        try {
         const cityId = aiResult.extracted_data.city ? await propertyService.resolveCityId(aiResult.extracted_data.city) : undefined;
         await clientService.updateFromAI(client.id, {
           name: aiResult.extracted_data.client_name,
@@ -601,6 +603,9 @@ export class ConversationService {
           city_id: cityId,
           intent: { intent: aiResult.intent.primary, confidence: aiResult.intent.confidence, timestamp: new Date().toISOString(), message_id: message.id },
         });
+        } catch (e: any) {
+          logger.warn('client profile enrichment skipped', { clientId: client.id, error: e?.message });
+        }
       }
 
       await this.db('messages').where('id', message.id).update({
