@@ -1,25 +1,29 @@
-import { v2 as cloudinary } from 'cloudinary';
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { randomUUID } from 'crypto';
+import sharp from 'sharp';
 import { config } from '../config/index.js';
 import { logger } from '../config/logger.js';
 
-let configured = false;
+let client: S3Client | null = null;
 
-function ensureConfigured(): void {
-  if (configured) return;
-  if (!config.cloudinary.cloudName || !config.cloudinary.apiKey || !config.cloudinary.apiSecret) {
-    throw new Error('Cloudinary غير مُهيّأ — أضف CLOUDINARY_CLOUD_NAME / API_KEY / API_SECRET في متغيرات البيئة');
+function getClient(): S3Client {
+  if (client) return client;
+  const { accountId, accessKeyId, secretAccessKey, bucket, publicUrl } = config.r2;
+  if (!accountId || !accessKeyId || !secretAccessKey || !bucket || !publicUrl) {
+    throw new Error(
+      'R2 غير مُهيّأ — أضف R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / R2_BUCKET_NAME / R2_PUBLIC_URL في متغيرات البيئة'
+    );
   }
-  cloudinary.config({
-    cloud_name: config.cloudinary.cloudName,
-    api_key: config.cloudinary.apiKey,
-    api_secret: config.cloudinary.apiSecret,
-    secure: true,
+  client = new S3Client({
+    region: 'auto',
+    endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+    credentials: { accessKeyId, secretAccessKey },
   });
-  configured = true;
+  return client;
 }
 
 /**
- * Uploads a buffer to Cloudinary and returns a permanent HTTPS URL.
+ * Uploads a buffer to Cloudflare R2 and returns a permanent public URL.
  * Railway's own filesystem is wiped on every redeploy, so property photos
  * cannot live on local disk — they must land in durable storage the first time.
  */
@@ -27,34 +31,40 @@ export async function uploadImageBuffer(
   buffer: Buffer,
   folder: string = 'al-naqidan/properties'
 ): Promise<{ url: string; publicId: string }> {
-  ensureConfigured();
+  const s3 = getClient();
 
-  return new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      {
-        folder,
-        resource_type: 'image',
-        // Cap dimensions and auto-compress — WhatsApp doesn't need original-resolution photos.
-        transformation: [{ width: 1600, height: 1600, crop: 'limit', quality: 'auto:good' }],
-      },
-      (error, result) => {
-        if (error || !result) {
-          logger.error('Cloudinary upload failed', { error: error?.message });
-          reject(error ?? new Error('Cloudinary upload returned no result'));
-          return;
-        }
-        resolve({ url: result.secure_url, publicId: result.public_id });
-      }
+  // R2 has no built-in transformation pipeline like Cloudinary, so resize and
+  // compress here — WhatsApp doesn't need original-resolution photos anyway.
+  const resized = await sharp(buffer)
+    .resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: 82 })
+    .toBuffer();
+
+  const key = `${folder}/${randomUUID()}.jpg`;
+
+  try {
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: config.r2.bucket,
+        Key: key,
+        Body: resized,
+        ContentType: 'image/jpeg',
+      })
     );
-    stream.end(buffer);
-  });
+  } catch (error: any) {
+    logger.error('R2 upload failed', { error: error?.message, key });
+    throw error;
+  }
+
+  const base = config.r2.publicUrl.replace(/\/$/, '');
+  return { url: `${base}/${key}`, publicId: key };
 }
 
 export async function deleteImage(publicId: string): Promise<void> {
-  ensureConfigured();
   try {
-    await cloudinary.uploader.destroy(publicId);
+    const s3 = getClient();
+    await s3.send(new DeleteObjectCommand({ Bucket: config.r2.bucket, Key: publicId }));
   } catch (e: any) {
-    logger.warn('Cloudinary delete failed', { publicId, error: e?.message });
+    logger.warn('R2 delete failed', { publicId, error: e?.message });
   }
 }

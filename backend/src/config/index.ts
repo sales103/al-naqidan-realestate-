@@ -89,10 +89,14 @@ export const config = {
     allowedDocTypes: optionalEnv('ALLOWED_DOC_TYPES', 'pdf').split(','),
   },
 
-  cloudinary: {
-    cloudName: optionalEnv('CLOUDINARY_CLOUD_NAME', ''),
-    apiKey: optionalEnv('CLOUDINARY_API_KEY', ''),
-    apiSecret: optionalEnv('CLOUDINARY_API_SECRET', ''),
+  r2: {
+    accountId: optionalEnv('R2_ACCOUNT_ID', ''),
+    accessKeyId: optionalEnv('R2_ACCESS_KEY_ID', ''),
+    secretAccessKey: optionalEnv('R2_SECRET_ACCESS_KEY', ''),
+    bucket: optionalEnv('R2_BUCKET_NAME', ''),
+    // The bucket's public dev subdomain (https://pub-xxxx.r2.dev) or a custom
+    // domain mapped to it — R2 objects have no public URL of their own.
+    publicUrl: optionalEnv('R2_PUBLIC_URL', ''),
   },
 
   frontendUrl: optionalEnv('FRONTEND_URL', 'http://localhost:5173'),
