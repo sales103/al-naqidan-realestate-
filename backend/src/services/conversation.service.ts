@@ -7,6 +7,10 @@ import { propertyService } from './property.service.js';
 import { clientService } from './client.service.js';
 import { whatsappService } from './whatsapp.service.js';
 import { sseService } from './sse.service.js';
+import {
+  detectComplaint, acknowledgement, nextQuestion, buildAgentSummary, handoverLine,
+  type AngerLevel, type ComplaintCategory,
+} from './complaint.service.js';
 import type {
   Conversation, Message, Client,
   WhatsAppWebhookPayload, AIProcessingResult, PropertySearchParams,
@@ -29,7 +33,7 @@ function recordError(where: string, e: any): void {
 // welcome → purpose → type → entry → location → budget → ai → escalated
 // =============================================================================
 
-type FlowState = 'welcome' | 'purpose' | 'type' | 'entry' | 'location' | 'budget' | 'ai' | 'escalated';
+type FlowState = 'welcome' | 'purpose' | 'type' | 'entry' | 'location' | 'budget' | 'ai' | 'complaint' | 'escalated';
 
 /** One selectable option. `keywords` let the customer answer in their own words. */
 interface FlowOption {
@@ -46,6 +50,13 @@ interface FlowContext {
   budget?: number;
   /** Options last offered, so a bare "2" can be resolved back to its option. */
   pending?: FlowOption[];
+  /** Complaint mode: the bot stays here until a human takes over. */
+  complaint?: {
+    level: AngerLevel;
+    category: ComplaintCategory;
+    description?: string;
+    contract?: string;
+  };
 }
 
 const PROPERTY_TYPE_MAP: Record<string, { db_types: string[]; label: string }> = {
@@ -269,6 +280,13 @@ export class ConversationService {
     const clickedId = this.extractButtonId(payload);
     const text = (message.content ?? '').trim();
 
+    // A complaint outranks every other flow: switch modes and stay there.
+    const signal = detectComplaint(message.content ?? '');
+    if (ctx.state === 'complaint' || signal.isComplaint) {
+      await this.handleComplaint(message, client, conversation, ctx, signal);
+      return;
+    }
+
     if (isNew || ctx.state === 'welcome') { await this.stepWelcome(client, conversation, ctx); return; }
     if (ctx.state === 'ai' || ctx.state === 'escalated') { await this.processWithAI(message, client, conversation, ctx, payload); return; }
     if (ctx.state === 'purpose') { await this.stepPurpose(clickedId, text, client, conversation, ctx); return; }
@@ -340,6 +358,83 @@ export class ConversationService {
       `لم أفهم اختيارك 🙂\nاختر من القائمة أو أرسل الرقم:\n\n${menu}`,
       this.waInstance(conversation),
     );
+  }
+
+  // ===========================================================================
+  // Complaint mode — listen, gather, calm, hand over
+  // ===========================================================================
+
+  private async handleComplaint(
+    message: Message, client: Client, conversation: Conversation,
+    ctx: FlowContext, signal: { isComplaint: boolean; level: AngerLevel; category: ComplaintCategory },
+  ): Promise<void> {
+    const inst = this.waInstance(conversation);
+    const text = (message.content ?? '').trim();
+    const prev = ctx.complaint;
+
+    // Keep the highest severity seen — a customer who was furious once stays a priority.
+    const level = (Math.max(prev?.level ?? 1, signal.level) as AngerLevel);
+    const category = prev?.category && prev.category !== 'other' ? prev.category : signal.category;
+
+    // First message in complaint mode: apologise and ask one thing.
+    if (!prev) {
+      await this.saveFlowContext(conversation.id, {
+        ...ctx, state: 'complaint', pending: undefined,
+        complaint: { level, category },
+      });
+      await whatsappService.sendText(client.phone, acknowledgement(level), inst);
+
+      // Very angry: do not interrogate, escalate straight away.
+      if (level >= 4) {
+        await this.escalateComplaint(client, conversation, { level, category, description: text }, inst);
+        return;
+      }
+      return;
+    }
+
+    // Fill in whatever is still missing, one question at a time.
+    const known = { ...prev, level, category };
+    if (!known.description) known.description = text;
+    else if (!known.contract) known.contract = /^(لا|لأ|no|ما عندي)/i.test(text) ? 'لا يوجد' : text;
+
+    const question = nextQuestion(known, category);
+    if (question) {
+      await this.saveFlowContext(conversation.id, { ...ctx, state: 'complaint', complaint: known });
+      await whatsappService.sendText(client.phone, question, inst);
+      return;
+    }
+
+    await this.escalateComplaint(client, conversation, known, inst);
+  }
+
+  /** Hand the complaint to a human with a full written summary. */
+  private async escalateComplaint(
+    client: Client, conversation: Conversation,
+    data: { level: AngerLevel; category: ComplaintCategory; description?: string; contract?: string },
+    inst: string,
+  ): Promise<void> {
+    const summary = buildAgentSummary({
+      clientName: client.full_name,
+      phone: client.phone,
+      level: data.level,
+      category: data.category,
+      description: data.description,
+      contract: data.contract,
+    });
+
+    try {
+      await this.db('conversations').where('id', conversation.id)
+        .update({ ai_handoff_requested: true, updated_at: new Date() });
+      await this.notifyAgent(client, conversation, summary);
+    } catch (e: any) {
+      logger.error('complaint escalation failed', { clientId: client.id, error: e?.message });
+    }
+
+    await this.saveFlowContext(conversation.id, {
+      state: 'escalated', complaint: data,
+    });
+    await whatsappService.sendText(client.phone, handoverLine(data.level), inst);
+    logger.info('complaint escalated', { clientId: client.id, level: data.level, category: data.category });
   }
 
   // ===========================================================================
