@@ -171,6 +171,43 @@ export class WhatsAppService {
     }
   }
 
+  /**
+   * Interactive list message — real tappable options in WhatsApp.
+   * Falls back to a numbered text menu when the account/API can't render lists;
+   * the flow accepts the numbers too, so either way the customer can reply.
+   */
+  async sendList(
+    to: string,
+    title: string,
+    body: string,
+    buttonText: string,
+    rows: { id: string; title: string; description?: string }[],
+    instance: string = config.whatsapp.instanceName,
+  ): Promise<'list' | 'text'> {
+    try {
+      await this.client.post(`message/sendList/${instance}`, {
+        number: to,
+        title,
+        description: body,
+        buttonText,
+        footerText: 'مكتب النقيدان العقاري',
+        sections: [{
+          title: 'الخيارات',
+          rows: rows.map(r => ({
+            title: r.title,
+            description: r.description ?? '',
+            rowId: r.id,
+          })),
+        }],
+      });
+      return 'list';
+    } catch {
+      const menu = rows.map((r, i) => `${i + 1}. ${r.title}`).join('\n');
+      await this.sendText(to, `*${title}*\n${body}\n\n${menu}\n\n_اكتب الرقم أو اسم الخيار_`, instance);
+      return 'text';
+    }
+  }
+
   getRiyadhGreeting(): string {
     const utc = Date.now() + new Date().getTimezoneOffset() * 60000;
     const riyadhHour = new Date(utc + 3 * 3600000).getHours();

@@ -21,12 +21,21 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 type FlowState = 'welcome' | 'purpose' | 'type' | 'entry' | 'location' | 'budget' | 'ai' | 'escalated';
 
+/** One selectable option. `keywords` let the customer answer in their own words. */
+interface FlowOption {
+  id: string;
+  title: string;
+  keywords?: string[];
+}
+
 interface FlowContext {
   state: FlowState;
   purpose?: 'rent' | 'buy';
   property_type?: string;
   location?: string;
   budget?: number;
+  /** Options last offered, so a bare "2" can be resolved back to its option. */
+  pending?: FlowOption[];
 }
 
 const PROPERTY_TYPE_MAP: Record<string, { db_types: string[]; label: string }> = {
@@ -41,6 +50,34 @@ const PROPERTY_TYPE_MAP: Record<string, { db_types: string[]; label: string }> =
   land:             { db_types: ['land'],               label: 'أرض' },
 };
 
+// =============================================================================
+// Arabic text helpers
+// =============================================================================
+
+/** Arabic-Indic and Persian digits -> ASCII. */
+function toLatinDigits(s: string): string {
+  return s
+    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06F0));
+}
+
+/**
+ * Normalise Arabic so "عوايل" / "عوائل" / "العوائل" all compare equal:
+ * strip diacritics, unify alef/ya/ta-marbuta/hamza, drop emoji and punctuation.
+ */
+function normalizeAr(s: string): string {
+  return toLatinDigits(s)
+    .replace(/[ً-ْـ]/g, '')
+    .replace(/[آأإٱ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/[ؤئء]/g, '')
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{20E3}]/gu, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function getRiyadhGreeting(): string {
   const h = new Date(Date.now() + 3 * 3600000).getHours();
   if (h < 12) return 'صباح الخير ☀️';
@@ -48,15 +85,30 @@ function getRiyadhGreeting(): string {
   return 'مساء النور 🌙';
 }
 
-function extractBudget(text: string): number | undefined {
-  const m = text.match(/(\d+(?:\.\d+)?)\s*مليون/);
-  if (m) return parseFloat(m[1]!) * 1_000_000;
-  const k = text.match(/(\d+(?:\.\d+)?)\s*(?:ألف|الف)/i);
-  if (k) return parseFloat(k[1]!) * 1_000;
-  const n = text.match(/(\d{4,})/);
-  if (n) return parseInt(n[1]!, 10);
-  return undefined;
+/**
+ * Budget from free text. Handles "مليون", "20 ألف", "20000" and a bare "25",
+ * which for rent means 25 thousand — customers rarely type the zeros.
+ */
+function extractBudget(text: string, purpose?: 'rent' | 'buy'): number | undefined {
+  const t = toLatinDigits(text);
+
+  const m = t.match(/(\d+(?:[.,]\d+)?)\s*مليون/);
+  if (m) return parseFloat(m[1]!.replace(',', '.')) * 1_000_000;
+
+  const k = t.match(/(\d+(?:[.,]\d+)?)\s*(?:ألف|الف|آلاف|الاف|ك)(?!\p{L})/u);
+  if (k) return parseFloat(k[1]!.replace(',', '.')) * 1_000;
+
+  const n = t.match(/(\d[\d,]*)/);
+  if (!n) return undefined;
+  const raw = parseFloat(n[1]!.replace(/,/g, ''));
+  if (!isFinite(raw) || raw <= 0) return undefined;
+
+  if (raw >= 1000) return raw;              // already a full amount
+  if (purpose === 'buy') return raw * 1_000_000;  // "2" when buying = 2 million
+  return raw * 1_000;                        // "25" when renting = 25 thousand
 }
+
+const OPEN_BUDGET = ['مفتوح', 'مو محدد', 'ما عندي', 'حسب', 'اي شي', 'مافي', 'غير محدد'];
 
 export class ConversationService {
   private get db() { return getDatabase(); }
@@ -193,18 +245,84 @@ export class ConversationService {
   }
 
   // ===========================================================================
+  // Option handling — ask once, understand tap / number / free wording
+  // ===========================================================================
+
+  /** Send options as a tappable list and remember them for the next reply. */
+  private async askOptions(
+    client: Client, conversation: Conversation, ctx: FlowContext,
+    nextState: FlowState, title: string, body: string, options: FlowOption[],
+    extra: Partial<FlowContext> = {},
+  ): Promise<void> {
+    await whatsappService.sendList(
+      client.phone, title, body, 'اختر',
+      options.map(o => ({ id: o.id, title: o.title })),
+      this.waInstance(conversation),
+    );
+    await this.saveFlowContext(conversation.id, { ...ctx, ...extra, state: nextState, pending: options });
+  }
+
+  /**
+   * Resolve what the customer meant: a tapped row id, the option's number,
+   * or their own wording matched against the option title and its keywords.
+   */
+  private resolveChoice(clickedId: string | null, text: string, ctx: FlowContext): string | null {
+    const options = ctx.pending ?? [];
+    if (clickedId && options.some(o => o.id === clickedId)) return clickedId;
+    if (clickedId) return clickedId;
+
+    const norm = normalizeAr(text);
+    if (!norm) return null;
+
+    // "2" / "٢" / "الخيار 2"
+    const numMatch = norm.match(/^(?:الخيار\s*)?(\d{1,2})$/);
+    if (numMatch) {
+      const idx = parseInt(numMatch[1]!, 10) - 1;
+      if (idx >= 0 && idx < options.length) return options[idx]!.id;
+    }
+
+    // exact title, then keyword, then substring — most specific first
+    for (const o of options) if (normalizeAr(o.title) === norm) return o.id;
+    for (const o of options) {
+      for (const kw of o.keywords ?? []) {
+        const k = normalizeAr(kw);
+        if (k && (norm === k || norm.includes(k))) return o.id;
+      }
+    }
+    for (const o of options) {
+      const t = normalizeAr(o.title);
+      if (t && (norm.includes(t) || t.includes(norm))) return o.id;
+    }
+    return null;
+  }
+
+  /** Re-offer the same options without sounding like a broken record. */
+  private async reAsk(client: Client, conversation: Conversation, ctx: FlowContext): Promise<void> {
+    const options = ctx.pending ?? [];
+    if (options.length === 0) return;
+    const menu = options.map((o, i) => `${i + 1}. ${o.title}`).join('\n');
+    await whatsappService.sendText(
+      client.phone,
+      `لم أفهم اختيارك 🙂\nاختر من القائمة أو أرسل الرقم:\n\n${menu}`,
+      this.waInstance(conversation),
+    );
+  }
+
+  // ===========================================================================
   // Step 1 — Welcome
   // ===========================================================================
 
   private async stepWelcome(client: Client, conversation: Conversation, ctx: FlowContext): Promise<void> {
-    const greeting = getRiyadhGreeting();
-    await whatsappService.sendText(client.phone, `${greeting}\nأهلاً بك في *مكتب عبدالحكيم النقيدان للاستثمارات العقارية* 🏢\n\nنسعد بخدمتك — ما الذي تبحث عنه؟`, this.waInstance(conversation));
-    await sleep(600);
-    await whatsappService.sendButtons(client.phone, 'نوع الطلب', 'اختر ما يناسبك:', [
-      { id: 'purpose_rent', text: '🔑 إيجار' },
-      { id: 'purpose_buy',  text: '🏠 شراء' },
-    ], this.waInstance(conversation));
-    await this.saveFlowContext(conversation.id, { ...ctx, state: 'purpose' });
+    await whatsappService.sendText(
+      client.phone,
+      `${getRiyadhGreeting()}\nأهلاً بك في *مكتب عبدالحكيم النقيدان للاستثمارات العقارية* 🏢\n\nنسعد بخدمتك — اختر ما تبحث عنه:`,
+      this.waInstance(conversation),
+    );
+    await sleep(500);
+    await this.askOptions(client, conversation, ctx, 'purpose', 'نوع الطلب', 'اختر ما يناسبك:', [
+      { id: 'purpose_rent', title: '🔑 إيجار', keywords: ['ايجار', 'استئجار', 'مستاجر', 'ابغى استاجر', 'للايجار'] },
+      { id: 'purpose_buy',  title: '🏠 شراء', keywords: ['شراء', 'شري', 'اشتري', 'تمليك', 'بيع', 'للبيع'] },
+    ]);
     await clientService.update(client.id, { status: 'contacted' } as any);
   }
 
@@ -216,152 +334,154 @@ export class ConversationService {
     clickedId: string | null, text: string,
     client: Client, conversation: Conversation, ctx: FlowContext,
   ): Promise<void> {
-    let purpose: 'rent' | 'buy' | undefined;
-    if (clickedId === 'purpose_rent' || text.includes('إيجار') || text.includes('ايجار')) purpose = 'rent';
-    else if (clickedId === 'purpose_buy' || text.includes('شراء') || text.includes('شري')) purpose = 'buy';
+    const choice = this.resolveChoice(clickedId, text, ctx);
+    const purpose: 'rent' | 'buy' | undefined =
+      choice === 'purpose_rent' ? 'rent' : choice === 'purpose_buy' ? 'buy' : undefined;
 
-    if (!purpose) {
-      await whatsappService.sendButtons(client.phone, 'نوع الطلب', 'اختر ما يناسبك:', [
-        { id: 'purpose_rent', text: '🔑 إيجار' },
-        { id: 'purpose_buy',  text: '🏠 شراء' },
-      ], this.waInstance(conversation));
-      return;
-    }
+    if (!purpose) { await this.reAsk(client, conversation, ctx); return; }
 
-    await this.saveFlowContext(conversation.id, { ...ctx, state: 'type', purpose });
+    const options: FlowOption[] = purpose === 'rent'
+      ? [
+          { id: 'type_apt_family', title: '🏘 شقة عوائل', keywords: ['شقه عوايل', 'عوايل', 'عائله', 'شقه عائليه', 'شقه'] },
+          { id: 'type_apt_single', title: '👤 شقة عزاب',  keywords: ['عزاب', 'شقه عزاب', 'اعزب', 'مفرد'] },
+          { id: 'type_house',      title: '🏡 بيت',        keywords: ['بيت', 'دار', 'منزل', 'فيلا'] },
+          { id: 'type_commercial', title: '🏪 محل أو صالة تجارية', keywords: ['تجاري', 'محل', 'صاله', 'معرض', 'مكتب', 'مستودع'] },
+        ]
+      : [
+          { id: 'type_apt_family', title: '🏘 شقة', keywords: ['شقه', 'شقق', 'دور'] },
+          { id: 'type_house',      title: '🏡 فيلا أو بيت', keywords: ['فيلا', 'بيت', 'منزل', 'دار', 'قصر'] },
+          { id: 'type_land',       title: '📍 أرض', keywords: ['ارض', 'اراضي', 'قطعه'] },
+          { id: 'type_commercial', title: '🏢 عقار تجاري', keywords: ['تجاري', 'محل', 'صاله', 'مكتب', 'مستودع', 'عماره'] },
+        ];
 
-    if (purpose === 'rent') {
-      await whatsappService.sendButtons(client.phone, 'نوع العقار', 'ما الذي تبحث عنه؟', [
-        { id: 'type_apt_family', text: '🏘 شقة عوائل' },
-        { id: 'type_apt_single', text: '👤 شقة عزاب' },
-        { id: 'type_house',      text: '🏡 بيت' },
-        { id: 'type_commercial', text: '🏪 تجاري (محل / صالة)' },
-      ], this.waInstance(conversation));
-    } else {
-      await whatsappService.sendButtons(client.phone, 'نوع العقار', 'ما الذي تبحث عنه؟', [
-        { id: 'type_apt_family', text: '🏘 شقة' },
-        { id: 'type_house',      text: '🏡 فيلا / بيت' },
-        { id: 'type_land',       text: '📍 أرض' },
-        { id: 'type_commercial', text: '🏢 تجاري' },
-      ], this.waInstance(conversation));
-    }
+    await this.askOptions(
+      client, conversation, ctx, 'type',
+      'نوع العقار', purpose === 'rent' ? 'ما الذي تبحث عنه للإيجار؟' : 'ما الذي ترغب بشرائه؟',
+      options, { purpose },
+    );
   }
 
   // ===========================================================================
-  // Step 3 — Property Type
+  // Step 3 — Property type
   // ===========================================================================
 
   private async stepType(
     clickedId: string | null, text: string,
     client: Client, conversation: Conversation, ctx: FlowContext,
   ): Promise<void> {
-    const typeMap: Record<string, string> = {
+    const choice = this.resolveChoice(clickedId, text, ctx);
+    if (!choice) { await this.reAsk(client, conversation, ctx); return; }
+
+    if (choice === 'type_house') {
+      await this.askOptions(client, conversation, ctx, 'entry', 'نوع المدخل', 'ما نوع المدخل المطلوب؟', [
+        { id: 'entry_private', title: '🔒 مدخل خاص',   keywords: ['خاص', 'مستقل', 'منفصل'] },
+        { id: 'entry_shared',  title: '🚪 مدخل مشترك', keywords: ['مشترك', 'عام'] },
+      ]);
+      return;
+    }
+
+    if (choice === 'type_commercial') {
+      await this.askOptions(client, conversation, ctx, 'entry', 'النشاط التجاري', 'حدد ما تحتاجه:', [
+        { id: 'com_shop',    title: '🏪 محل',     keywords: ['محل', 'دكان'] },
+        { id: 'com_hall',    title: '🏬 صالة',    keywords: ['صاله', 'معرض'] },
+        { id: 'com_office',  title: '🏢 مكتب',    keywords: ['مكتب', 'اداري'] },
+        { id: 'com_storage', title: '📦 مستودع',  keywords: ['مستودع', 'مخزن'] },
+      ], { property_type: 'commercial' });
+      return;
+    }
+
+    const map: Record<string, string> = {
       type_apt_family: 'apartment_family',
       type_apt_single: 'apartment_single',
-      type_house:      'house',
-      type_land:       'land',
-      type_commercial: 'commercial',
+      type_land: 'land',
     };
+    const propType = map[choice];
+    if (!propType) { await this.reAsk(client, conversation, ctx); return; }
 
-    let propType = clickedId ? typeMap[clickedId] : undefined;
-    if (!propType) {
-      if (text.includes('شقة') || text.includes('شقق')) propType = 'apartment_family';
-      else if (text.includes('بيت') || text.includes('فيلا')) propType = 'house';
-      else if (text.includes('أرض') || text.includes('ارض')) propType = 'land';
-      else if (text.includes('محل') || text.includes('صالة') || text.includes('مكتب')) propType = 'commercial';
-    }
-
-    if (!propType) {
-      await whatsappService.sendText(client.phone, 'من فضلك اختر نوع العقار من الخيارات 👆', this.waInstance(conversation));
-      return;
-    }
-
-    if (propType === 'house') {
-      await whatsappService.sendButtons(client.phone, 'نوع المدخل', 'ما نوع المدخل المطلوب؟', [
-        { id: 'entry_private', text: '🔒 مدخل خاص' },
-        { id: 'entry_shared',  text: '🚪 مدخل مشترك' },
-      ], this.waInstance(conversation));
-      await this.saveFlowContext(conversation.id, { ...ctx, state: 'entry' });
-      return;
-    }
-
-    if (propType === 'commercial') {
-      await whatsappService.sendButtons(client.phone, 'نوع التجاري', 'حدد ما تحتاجه:', [
-        { id: 'com_shop',    text: '🏪 محل' },
-        { id: 'com_hall',    text: '🏬 صالة' },
-        { id: 'com_office',  text: '🏢 مكتب' },
-        { id: 'com_storage', text: '📦 مستودع' },
-      ], this.waInstance(conversation));
-      await this.saveFlowContext(conversation.id, { ...ctx, state: 'entry', property_type: 'commercial' });
-      return;
-    }
-
-    await this.saveFlowContext(conversation.id, { ...ctx, state: 'location', property_type: propType });
-    await whatsappService.sendText(client.phone, '📍 ممتاز!\n\nفي أي *حي أو منطقة* تبحث؟\n_(اكتب اسم الحي أو المنطقة)_', this.waInstance(conversation));
+    await this.askLocation(client, conversation, { ...ctx, property_type: propType });
   }
 
   // ===========================================================================
-  // Step 3b — Entry / Commercial Sub-type
+  // Step 3b — Entry / commercial sub-type
   // ===========================================================================
 
   private async stepEntry(
     clickedId: string | null, text: string,
     client: Client, conversation: Conversation, ctx: FlowContext,
   ): Promise<void> {
-    const entryMap: Record<string, string> = {
+    const choice = this.resolveChoice(clickedId, text, ctx);
+    const map: Record<string, string> = {
       entry_private: 'house_private', entry_shared: 'house_shared',
       com_shop: 'shop', com_hall: 'hall', com_office: 'office', com_storage: 'warehouse',
     };
+    const finalType = choice ? map[choice] : undefined;
+    if (!finalType) { await this.reAsk(client, conversation, ctx); return; }
 
-    let finalType = clickedId ? entryMap[clickedId] : undefined;
-    if (!finalType) {
-      if (text.includes('خاص')) finalType = 'house_private';
-      else if (text.includes('مشترك')) finalType = 'house_shared';
-    }
-
-    if (!finalType) {
-      await whatsappService.sendText(client.phone, 'من فضلك اختر من الخيارات 👆', this.waInstance(conversation));
-      return;
-    }
-
-    await this.saveFlowContext(conversation.id, { ...ctx, state: 'location', property_type: finalType });
-    await whatsappService.sendText(client.phone, '📍 ممتاز!\n\nفي أي *حي أو منطقة* تبحث؟\n_(اكتب اسم الحي أو المنطقة)_', this.waInstance(conversation));
+    await this.askLocation(client, conversation, { ...ctx, property_type: finalType });
   }
 
   // ===========================================================================
   // Step 4 — Location
   // ===========================================================================
 
+  private async askLocation(client: Client, conversation: Conversation, ctx: FlowContext): Promise<void> {
+    await this.saveFlowContext(conversation.id, { ...ctx, state: 'location', pending: undefined });
+    const label = PROPERTY_TYPE_MAP[ctx.property_type ?? '']?.label ?? 'العقار';
+    await whatsappService.sendText(
+      client.phone,
+      `ممتاز — ${label} ✅\n\n📍 في أي *مدينة أو حي* تبحث؟\n_اكتب الاسم، مثال: بريدة — أو حي النخيل_`,
+      this.waInstance(conversation),
+    );
+  }
+
   private async stepLocation(
     text: string, client: Client, conversation: Conversation, ctx: FlowContext,
   ): Promise<void> {
-    if (text.length < 2) {
-      await whatsappService.sendText(client.phone, 'من فضلك اكتب اسم الحي أو المنطقة 📍', this.waInstance(conversation));
+    const location = text.trim();
+    if (normalizeAr(location).length < 2) {
+      await whatsappService.sendText(
+        client.phone, '📍 اكتب اسم المدينة أو الحي من فضلك\n_مثال: بريدة — أو حي الروضة_',
+        this.waInstance(conversation),
+      );
       return;
     }
-    await this.saveFlowContext(conversation.id, { ...ctx, state: 'budget', location: text });
-    await clientService.update(client.id, { district: text } as any);
-    await whatsappService.sendText(client.phone, `💰 شكراً!\n\nما هي *ميزانيتك التقريبية*؟\n_(مثال: 25 ألف سنوياً — أو 1.5 مليون — أو مفتوح)_`, this.waInstance(conversation));
+
+    await this.saveFlowContext(conversation.id, { ...ctx, state: 'budget', location, pending: undefined });
+    await clientService.update(client.id, { district: location } as any);
+
+    const hint = ctx.purpose === 'rent'
+      ? '_مثال: 20 ألف — أو اكتب 20 فقط — أو مفتوح_'
+      : '_مثال: 800 ألف — أو 1.5 مليون — أو مفتوح_';
+    await whatsappService.sendText(
+      client.phone,
+      `شكراً 🙏\n\n💰 ما هي *ميزانيتك التقريبية*؟\n${hint}`,
+      this.waInstance(conversation),
+    );
   }
 
   // ===========================================================================
-  // Step 5 — Budget → hand to AI
+  // Step 5 — Budget, then hand over to the AI
   // ===========================================================================
 
   private async stepBudget(
     text: string, client: Client, conversation: Conversation, ctx: FlowContext, message: Message,
   ): Promise<void> {
-    const budget = extractBudget(text);
-    const isOpen = text.includes('مفتوح') || text.includes('مو محدد') || text.includes('ما عندي');
+    const norm = normalizeAr(text);
+    const isOpen = OPEN_BUDGET.some(w => norm.includes(normalizeAr(w)));
+    const budget = isOpen ? undefined : extractBudget(text, ctx.purpose);
 
-    if (!budget && !isOpen && text.length < 3) {
-      await whatsappService.sendText(client.phone, '💰 اكتب ميزانيتك التقريبية\n_(مثال: 20 ألف — أو 1 مليون — أو مفتوح)_', this.waInstance(conversation));
+    if (!budget && !isOpen) {
+      await whatsappService.sendText(
+        client.phone,
+        `💰 اكتب الميزانية بالأرقام من فضلك\n${ctx.purpose === 'rent' ? '_مثال: 20 ألف — أو 20_' : '_مثال: 800 ألف — أو 1.5 مليون_'}\nأو اكتب *مفتوح* إذا لم تحددها بعد`,
+        this.waInstance(conversation),
+      );
       return;
     }
 
     if (budget) await clientService.update(client.id, { budget_max: budget } as any);
 
-    const newCtx: FlowContext = { ...ctx, state: 'ai', budget };
+    const newCtx: FlowContext = { ...ctx, state: 'ai', budget, pending: undefined };
     await this.saveFlowContext(conversation.id, newCtx);
 
     const typeInfo = PROPERTY_TYPE_MAP[ctx.property_type ?? ''];
@@ -372,15 +492,19 @@ export class ConversationService {
       } as any);
     }
 
-    const purposeAr = ctx.purpose === 'rent' ? 'إيجار' : 'شراء';
+    const purposeAr = ctx.purpose === 'rent' ? 'الإيجار' : 'الشراء';
     const budgetStr = budget
-      ? budget >= 1_000_000 ? `${(budget / 1_000_000).toFixed(1)} مليون ريال` : `${(budget / 1_000).toFixed(0)} ألف ريال`
+      ? budget >= 1_000_000 ? `${(budget / 1_000_000).toFixed(1)} مليون ريال` : `${Math.round(budget / 1_000)} ألف ريال`
       : 'ميزانية مفتوحة';
 
-    message.content = `أبحث عن ${typeInfo?.label ?? ctx.property_type ?? 'عقار'} للـ${purposeAr} في ${ctx.location ?? 'الرياض'} بميزانية ${budgetStr}`;
+    message.content = `أبحث عن ${typeInfo?.label ?? ctx.property_type ?? 'عقار'} لـ${purposeAr} في ${ctx.location ?? ''} بميزانية ${budgetStr}`;
 
-    await whatsappService.sendText(client.phone, '🔍 جاري البحث عن أفضل الخيارات المتاحة...', this.waInstance(conversation));
-    await sleep(800);
+    await whatsappService.sendText(
+      client.phone,
+      `تمام ✅\n\n*ملخص طلبك*\n🏠 ${typeInfo?.label ?? 'عقار'}\n📍 ${ctx.location ?? '—'}\n💰 ${budgetStr}\n\n🔍 جاري البحث عن أفضل الخيارات المتاحة...`,
+      this.waInstance(conversation),
+    );
+    await sleep(700);
 
     await this.processWithAI(message, client, conversation, newCtx, undefined);
   }
