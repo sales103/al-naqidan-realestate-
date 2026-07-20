@@ -1,13 +1,13 @@
 -- ============================================================================
--- 002 — Reconcile an existing database with 001_initial_schema.sql
+-- 002 - Reconcile an existing database with 001_initial_schema.sql
 --
 -- Idempotent and safe to re-run: only ADD COLUMN IF NOT EXISTS statements.
 -- Existing columns, constraints and data are never touched.
 --
--- Enum-typed columns are declared as VARCHAR/TEXT[] on purpose so this script
--- never depends on a custom type existing. Columns that already exist (with
--- their original enum type) are skipped untouched.
--- Written for the Railway query editor: plain statements only, one per line.
+-- Enum-typed columns are declared as VARCHAR/TEXT[] so this script never
+-- depends on a custom type existing. Columns that already exist keep their
+-- original type untouched.
+-- Railway query editor friendly: plain statements only, one per line.
 -- ============================================================================
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255);
@@ -66,7 +66,7 @@ ALTER TABLE properties ADD COLUMN IF NOT EXISTS title VARCHAR(500);
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS title_ar VARCHAR(500);
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS description TEXT;
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS description_ar TEXT;
-ALTER TABLE properties ADD COLUMN IF NOT EXISTS VARCHAR(50) VARCHAR(50);
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS property_type VARCHAR(50);
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS purpose VARCHAR(50) DEFAULT 'sale';
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'available';
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS city_id INTEGER;
@@ -75,7 +75,10 @@ ALTER TABLE properties ADD COLUMN IF NOT EXISTS address TEXT;
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS google_maps_url VARCHAR(1000);
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS latitude DECIMAL(10, 8);
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS longitude DECIMAL(11, 8);
-ALTER TABLE properties ADD COLUMN IF NOT EXISTS location_point GEOGRAPHY(POINT, 4326);
+-- Needs the PostGIS extension; the app uses latitude/longitude instead, so it is
+-- left out. Enable PostGIS first if you want it:
+--   CREATE EXTENSION IF NOT EXISTS postgis;
+-- ALTER TABLE properties ADD COLUMN IF NOT EXISTS location_point GEOGRAPHY(POINT, 4326);
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS area_sqm DECIMAL(12, 2);
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS rooms INTEGER;
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS bathrooms INTEGER;
@@ -179,7 +182,7 @@ ALTER TABLE conversations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAUL
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS conversation_id UUID;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS whatsapp_message_id VARCHAR(255);
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS direction VARCHAR(50);
-ALTER TABLE messages ADD COLUMN IF NOT EXISTS VARCHAR(50) VARCHAR(50) DEFAULT 'text';
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS message_type VARCHAR(50) DEFAULT 'text';
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'pending';
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS content TEXT;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS caption TEXT;
@@ -239,7 +242,7 @@ ALTER TABLE deals ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS created_by UUID;
 ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS client_id UUID;
-ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS VARCHAR(50) VARCHAR(50);
+ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS follow_up_type VARCHAR(50);
 ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ;
 ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ;
 ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'pending';
@@ -249,7 +252,7 @@ ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS is_cancelled BOOLEAN DEFAULT fal
 ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS cancel_reason TEXT;
 ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS user_id UUID;
-ALTER TABLE notifications ADD COLUMN IF NOT EXISTS VARCHAR(50) VARCHAR(50);
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS notification_type VARCHAR(50);
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS title VARCHAR(255);
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS body TEXT;
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS data JSONB DEFAULT '{}';
