@@ -51,7 +51,7 @@ ALTER TABLE cities ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()
 ALTER TABLE districts ADD COLUMN IF NOT EXISTS city_id INTEGER;
 ALTER TABLE districts ADD COLUMN IF NOT EXISTS name_ar VARCHAR(100);
 ALTER TABLE districts ADD COLUMN IF NOT EXISTS name_en VARCHAR(100);
-ALTER TABLE districts ADD COLUMN IF NOT EXISTS direction VARCHAR(20), -- شمال، جنوب، شرق، غرب، وسط;
+ALTER TABLE districts ADD COLUMN IF NOT EXISTS direction VARCHAR(20);
 ALTER TABLE districts ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
 ALTER TABLE districts ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE property_owners ADD COLUMN IF NOT EXISTS full_name VARCHAR(255);
@@ -75,9 +75,7 @@ ALTER TABLE properties ADD COLUMN IF NOT EXISTS address TEXT;
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS google_maps_url VARCHAR(1000);
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS latitude DECIMAL(10, 8);
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS longitude DECIMAL(11, 8);
--- Needs the PostGIS extension; the app uses latitude/longitude instead, so it is
--- left out. Enable PostGIS first if you want it:
---   CREATE EXTENSION IF NOT EXISTS postgis;
+-- needs PostGIS; app uses latitude/longitude instead:
 -- ALTER TABLE properties ADD COLUMN IF NOT EXISTS location_point GEOGRAPHY(POINT, 4326);
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS area_sqm DECIMAL(12, 2);
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS rooms INTEGER;
@@ -109,7 +107,7 @@ ALTER TABLE properties ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT N
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS created_by UUID;
 ALTER TABLE property_media ADD COLUMN IF NOT EXISTS property_id UUID;
-ALTER TABLE property_media ADD COLUMN IF NOT EXISTS media_type VARCHAR(20), -- image, video, pdf, document;
+ALTER TABLE property_media ADD COLUMN IF NOT EXISTS media_type VARCHAR(20);
 ALTER TABLE property_media ADD COLUMN IF NOT EXISTS url VARCHAR(1000);
 ALTER TABLE property_media ADD COLUMN IF NOT EXISTS thumbnail_url VARCHAR(1000);
 ALTER TABLE property_media ADD COLUMN IF NOT EXISTS title VARCHAR(255);
