@@ -706,8 +706,9 @@ export class ConversationService {
         'لم أجد حالياً عقاراً مطابقاً لطلبك تماماً 🔍\n\nسجّلت طلبك وسيتواصل معك أحد مستشارينا بأقرب الخيارات المتاحة.\n\n' + this.handoffNote(),
         this.waInstance(conversation),
       );
-      await this.db('conversations').where('id', conversation.id).update({ ai_handoff_requested: true, updated_at: new Date() });
-      await this.notifyAgent(client, conversation, 'تعذّر الرد الآلي — يحتاج متابعة بشرية');
+      // Notify the team, but keep the bot listening: an empty result is not a
+      // reason to go silent on the customer for the rest of the conversation.
+      await this.notifyAgent(client, conversation, 'لا توجد عقارات مطابقة — يحتاج متابعة بشرية');
     } catch (e: any) {
       logger.error('searchWithoutAI failed', { clientId: client.id, error: e?.message });
       await whatsappService.sendText(
