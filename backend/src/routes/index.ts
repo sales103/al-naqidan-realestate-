@@ -15,6 +15,7 @@ import eventsRoutes from './events.routes.js';
 import setupRoutes from './setup.routes.js';
 import notificationsRoutes from './notifications.routes.js';
 import settingsRoutes from './settings.routes.js';
+import diagnosticsRoutes from './diagnostics.routes.js';
 
 const router = Router();
 
@@ -34,5 +35,6 @@ router.use('/users', usersRoutes);
 router.use('/events', eventsRoutes);
 router.use('/notifications', notificationsRoutes);
 router.use('/settings', settingsRoutes);
+router.use('/diagnostics', diagnosticsRoutes);
 
 export default router;
