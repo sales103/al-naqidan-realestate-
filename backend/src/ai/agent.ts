@@ -150,7 +150,7 @@ export const processMessage = async (
       ...historyMessages,
       {
         role: 'user',
-        content: messageContent + '\n\n[SYSTEM: في نهاية ردك أضف سطراً بهذا الشكل بالضبط:\nJSON:{"intent":"search_property|property_details|price_inquiry|appointment_request|greeting|complaint|human_agent_request|general_inquiry|unknown","budget_max":null,"budget_min":null,"property_type":null,"city":null,"district":null,"rooms":null,"purpose":null,"client_name":null,"urgency":"low|medium|high","sentiment":"positive|neutral|negative"}]',
+        content: messageContent + '\n\n[SYSTEM: في نهاية ردك أضف سطراً بهذا الشكل بالضبط. property_type و purpose يجب أن تكونا بالإنجليزية من القيم المذكورة فقط أو null:\nJSON:{"intent":"search_property|property_details|price_inquiry|appointment_request|greeting|complaint|human_agent_request|general_inquiry|unknown","budget_max":null,"budget_min":null,"property_type":"land|apartment|villa|building|office|showroom|warehouse|farm|other|null","city":null,"district":null,"rooms":null,"purpose":"sale|rent|null","client_name":null,"urgency":"low|medium|high","sentiment":"positive|neutral|negative"}]',
       },
     ];
 
@@ -197,18 +197,58 @@ export const processMessage = async (
 // Parse AI Output (response + JSON intent in one call)
 // =============================================================================
 
+// The prompt asks the model for English enum values, but it drifts (e.g. returns
+// "شقة" instead of "apartment"). property.service filters with a strict equality
+// match, so an unnormalised value means zero rows ever match — the bot looks like
+// it "doesn't understand" and newly imported listings never surface. Normalise
+// defensively rather than trusting the prompt alone.
+const PROPERTY_TYPE_NORMALIZE: Record<string, string> = {
+  land: 'land', 'أرض': 'land', 'ارض': 'land',
+  apartment: 'apartment', 'شقة': 'apartment', 'شقه': 'apartment',
+  villa: 'villa', 'فيلا': 'villa', 'بيت': 'villa',
+  building: 'building', 'مبنى': 'building', 'عمارة': 'building',
+  office: 'office', 'مكتب': 'office',
+  showroom: 'showroom', 'محل': 'showroom', 'صالة': 'showroom', 'صاله': 'showroom',
+  warehouse: 'warehouse', 'مستودع': 'warehouse',
+  farm: 'farm', 'مزرعة': 'farm', 'مزرعه': 'farm', 'استراحة': 'farm', 'استراحه': 'farm',
+  investment_project: 'investment_project',
+  other: 'other',
+};
+
+const PURPOSE_NORMALIZE: Record<string, string> = {
+  sale: 'sale', buy: 'sale', 'بيع': 'sale', 'شراء': 'sale',
+  rent: 'rent', 'إيجار': 'rent', 'ايجار': 'rent', 'تأجير': 'rent',
+  both: 'both',
+};
+
+const normalizeEnum = (
+  value: string | null | undefined,
+  map: Record<string, string>
+): string | undefined => {
+  if (!value) return undefined;
+  const key = String(value).trim().toLowerCase();
+  return map[key] ?? map[String(value).trim()] ?? undefined;
+};
+
 const parseAIOutput = (
   raw: string,
   originalMessage: string
 ): { response: string; intent: AIIntent; extracted_data: AIExtractedData } => {
-  // Split on JSON: marker
-  const jsonMarker = raw.lastIndexOf('\nJSON:');
+  // Split on the JSON: marker. The model is asked for "\nJSON:" but sometimes
+  // omits the newline, wraps it in a code fence, or drops the colon — any of
+  // which used to leave the raw JSON blob sitting inside the WhatsApp reply.
+  // Search for the last "{...}" block instead of a fixed-format marker, so the
+  // customer-facing text stays clean regardless of exact model formatting.
   let response = raw;
   let jsonStr = '{}';
 
-  if (jsonMarker !== -1) {
-    response = raw.substring(0, jsonMarker).trim();
-    jsonStr = raw.substring(jsonMarker + 6).trim();
+  // Trailing ``` after the closing brace (a code-fenced JSON block) would
+  // otherwise break the end-of-string anchor below, so strip fence markers first.
+  const unfenced = raw.replace(/```json?/gi, '').replace(/```/g, '');
+  const blockMatch = unfenced.match(/JSON\s*:?\s*(\{[\s\S]*\})\s*$/i) ?? unfenced.match(/(\{[^{}]*"intent"[\s\S]*\})\s*$/);
+  if (blockMatch) {
+    jsonStr = blockMatch[1] ?? '{}';
+    response = unfenced.slice(0, unfenced.lastIndexOf(blockMatch[0])).replace(/JSON\s*:?\s*$/i, '').trim();
   }
 
   let parsed: any = {};
@@ -225,20 +265,27 @@ const parseAIOutput = (
   };
 
   const extracted_data: AIExtractedData = {
-    property_type: parsed.property_type ?? undefined,
+    property_type: normalizeEnum(parsed.property_type, PROPERTY_TYPE_NORMALIZE) as any,
     city: parsed.city ?? undefined,
     district: parsed.district ?? undefined,
     budget_max: parsed.budget_max ?? undefined,
     budget_min: parsed.budget_min ?? undefined,
     rooms: parsed.rooms ?? undefined,
-    purpose: parsed.purpose ?? undefined,
+    purpose: normalizeEnum(parsed.purpose, PURPOSE_NORMALIZE) as any,
     client_name: parsed.client_name ?? undefined,
     urgency: parsed.urgency ?? 'low',
     sentiment: parsed.sentiment ?? 'neutral',
     special_requirements: undefined,
   };
 
-  return { response: response || 'عذراً، لم أفهم الرسالة. هل يمكنك توضيح طلبك؟', intent, extracted_data };
+  // Final safety net: strip any stray JSON/code-fence remnants the regex above
+  // didn't catch, rather than forwarding a technical blob to the customer.
+  const cleanResponse = response
+    .replace(/```json?[\s\S]*?```/gi, '')
+    .replace(/JSON\s*:\s*\{[\s\S]*\}\s*$/i, '')
+    .trim();
+
+  return { response: cleanResponse || 'عذراً، لم أفهم الرسالة. هل يمكنك توضيح طلبك؟', intent, extracted_data };
 };
 
 // =============================================================================
