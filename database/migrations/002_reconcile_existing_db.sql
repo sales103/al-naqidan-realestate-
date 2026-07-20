@@ -1,0 +1,362 @@
+-- ============================================================================
+-- 002 — Reconcile an existing database with 001_initial_schema.sql
+-- Safe & idempotent: creates missing enum types, then adds any missing column.
+-- Existing tables, columns and data are left untouched.
+-- ============================================================================
+
+-- ---------- Enum types (ignored if they already exist) ----------
+DO $$ BEGIN
+  CREATE TYPE property_type AS ENUM (
+  'land', 'apartment', 'villa', 'building', 'office',
+  'showroom', 'warehouse', 'farm', 'investment_project', 'other'
+);
+
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE property_status AS ENUM (
+  'available', 'reserved', 'sold', 'rented', 'under_maintenance',
+  'coming_soon', 'hidden'
+);
+
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE client_status AS ENUM (
+  'new', 'contacted', 'interested', 'viewing_scheduled',
+  'negotiating', 'contract_pending', 'closed_won', 'closed_lost',
+  'on_hold', 'follow_up'
+);
+
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE message_type AS ENUM (
+  'text', 'image', 'video', 'audio', 'document',
+  'location', 'sticker', 'reaction', 'system'
+);
+
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE message_status AS ENUM (
+  'pending', 'sent', 'delivered', 'read', 'failed'
+);
+
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE user_role AS ENUM (
+  'super_admin', 'admin', 'sales_manager', 'sales_agent',
+  'marketer', 'customer_service', 'viewer'
+);
+
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE appointment_status AS ENUM (
+  'scheduled', 'confirmed', 'completed', 'cancelled', 'no_show'
+);
+
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE contract_status AS ENUM (
+  'draft', 'pending_signature', 'signed', 'active', 'completed',
+  'cancelled', 'disputed'
+);
+
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE follow_up_type AS ENUM (
+  'auto_1day', 'auto_3days', 'auto_1week', 'auto_1month', 'manual'
+);
+
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE notification_type AS ENUM (
+  'new_client', 'new_message', 'appointment_reminder', 'follow_up',
+  'deal_closed', 'system_alert', 'report_ready'
+);
+
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- ---------- Missing columns ----------
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(20);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(255);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name_ar VARCHAR(255);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS role user_role DEFAULT 'viewer';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp_number VARCHAR(20);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_token VARCHAR(255);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_expires TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS two_factor_enabled BOOLEAN DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS two_factor_secret VARCHAR(255);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS preferences JSONB DEFAULT '{}';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS user_id UUID;
+ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS token_hash VARCHAR(255);
+ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS ip_address INET;
+ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS user_agent TEXT;
+ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_id UUID;
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS action VARCHAR(100);
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS entity_type VARCHAR(100);
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS entity_id UUID;
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS old_values JSONB;
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS new_values JSONB;
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS ip_address INET;
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_agent TEXT;
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE cities ADD COLUMN IF NOT EXISTS name_ar VARCHAR(100);
+ALTER TABLE cities ADD COLUMN IF NOT EXISTS name_en VARCHAR(100);
+ALTER TABLE cities ADD COLUMN IF NOT EXISTS region_ar VARCHAR(100);
+ALTER TABLE cities ADD COLUMN IF NOT EXISTS region_en VARCHAR(100);
+ALTER TABLE cities ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+ALTER TABLE cities ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE districts ADD COLUMN IF NOT EXISTS city_id INTEGER;
+ALTER TABLE districts ADD COLUMN IF NOT EXISTS name_ar VARCHAR(100);
+ALTER TABLE districts ADD COLUMN IF NOT EXISTS name_en VARCHAR(100);
+ALTER TABLE districts ADD COLUMN IF NOT EXISTS direction VARCHAR(20), -- شمال، جنوب، شرق، غرب، وسط;
+ALTER TABLE districts ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+ALTER TABLE districts ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE property_owners ADD COLUMN IF NOT EXISTS full_name VARCHAR(255);
+ALTER TABLE property_owners ADD COLUMN IF NOT EXISTS phone VARCHAR(20);
+ALTER TABLE property_owners ADD COLUMN IF NOT EXISTS email VARCHAR(255);
+ALTER TABLE property_owners ADD COLUMN IF NOT EXISTS id_number VARCHAR(50);
+ALTER TABLE property_owners ADD COLUMN IF NOT EXISTS notes TEXT;
+ALTER TABLE property_owners ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE property_owners ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS code VARCHAR(50);
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS title VARCHAR(500);
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS title_ar VARCHAR(500);
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS description_ar TEXT;
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS property_type property_type;
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS purpose property_purpose DEFAULT 'sale';
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS status property_status DEFAULT 'available';
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS city_id INTEGER;
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS district_id INTEGER;
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS address TEXT;
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS google_maps_url VARCHAR(1000);
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS latitude DECIMAL(10, 8);
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS longitude DECIMAL(11, 8);
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS location_point GEOGRAPHY(POINT, 4326);
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS area_sqm DECIMAL(12, 2);
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS rooms INTEGER;
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS bathrooms INTEGER;
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS floor_number INTEGER;
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS total_floors INTEGER;
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS parking_spaces INTEGER;
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS age_years INTEGER;
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS price DECIMAL(15, 2);
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS price_per_sqm DECIMAL(10, 2);
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS negotiable BOOLEAN DEFAULT true;
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS currency VARCHAR(10) DEFAULT 'SAR';
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS features JSONB DEFAULT '[]';
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS amenities JSONB DEFAULT '[]';
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS nearby_places JSONB DEFAULT '[]';
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS owner_id UUID;
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS assigned_agent_id UUID;
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS commission_percentage DECIMAL(5, 2);
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS commission_amount DECIMAL(12, 2);
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS main_image_url VARCHAR(1000);
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS qr_code_url VARCHAR(1000);
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS is_featured BOOLEAN DEFAULT false;
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS view_count INTEGER DEFAULT 0;
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS inquiry_count INTEGER DEFAULT 0;
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS tags TEXT[];
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS meta_keywords TEXT;
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS available_from DATE;
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS created_by UUID;
+ALTER TABLE property_media ADD COLUMN IF NOT EXISTS property_id UUID;
+ALTER TABLE property_media ADD COLUMN IF NOT EXISTS media_type VARCHAR(20), -- image, video, pdf, document;
+ALTER TABLE property_media ADD COLUMN IF NOT EXISTS url VARCHAR(1000);
+ALTER TABLE property_media ADD COLUMN IF NOT EXISTS thumbnail_url VARCHAR(1000);
+ALTER TABLE property_media ADD COLUMN IF NOT EXISTS title VARCHAR(255);
+ALTER TABLE property_media ADD COLUMN IF NOT EXISTS size_bytes BIGINT;
+ALTER TABLE property_media ADD COLUMN IF NOT EXISTS mime_type VARCHAR(100);
+ALTER TABLE property_media ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
+ALTER TABLE property_media ADD COLUMN IF NOT EXISTS is_main BOOLEAN DEFAULT false;
+ALTER TABLE property_media ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE property_price_history ADD COLUMN IF NOT EXISTS property_id UUID;
+ALTER TABLE property_price_history ADD COLUMN IF NOT EXISTS old_price DECIMAL(15, 2);
+ALTER TABLE property_price_history ADD COLUMN IF NOT EXISTS new_price DECIMAL(15, 2);
+ALTER TABLE property_price_history ADD COLUMN IF NOT EXISTS change_reason TEXT;
+ALTER TABLE property_price_history ADD COLUMN IF NOT EXISTS changed_by UUID;
+ALTER TABLE property_price_history ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS full_name VARCHAR(255);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS phone VARCHAR(20);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS whatsapp_id VARCHAR(100);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS email VARCHAR(255);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS id_number VARCHAR(50);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS nationality VARCHAR(100) DEFAULT 'سعودي';
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS city_id INTEGER;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS district VARCHAR(100);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS address TEXT;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS preferred_property_types property_type[];
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS preferred_cities INTEGER[];
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS preferred_districts INTEGER[];
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS budget_min DECIMAL(15, 2);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS budget_max DECIMAL(15, 2);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS purpose property_purpose;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS area_min DECIMAL(12, 2);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS area_max DECIMAL(12, 2);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS rooms_needed INTEGER;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS special_requirements TEXT;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS status client_status DEFAULT 'new';
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS source VARCHAR(100) DEFAULT 'whatsapp';
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS assigned_agent_id UUID;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS last_contact_at TIMESTAMPTZ;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS next_follow_up_at TIMESTAMPTZ;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS ai_profile JSONB DEFAULT '{}';
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS conversation_context JSONB DEFAULT '{}';
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS intent_history JSONB DEFAULT '[]';
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS notes TEXT;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS tags TEXT[];
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS rating INTEGER;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS first_contact_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS created_by UUID;
+ALTER TABLE client_notes ADD COLUMN IF NOT EXISTS client_id UUID;
+ALTER TABLE client_notes ADD COLUMN IF NOT EXISTS content TEXT;
+ALTER TABLE client_notes ADD COLUMN IF NOT EXISTS is_private BOOLEAN DEFAULT false;
+ALTER TABLE client_notes ADD COLUMN IF NOT EXISTS created_by UUID;
+ALTER TABLE client_notes ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE client_property_interests ADD COLUMN IF NOT EXISTS client_id UUID;
+ALTER TABLE client_property_interests ADD COLUMN IF NOT EXISTS property_id UUID;
+ALTER TABLE client_property_interests ADD COLUMN IF NOT EXISTS interest_level INTEGER DEFAULT 3;
+ALTER TABLE client_property_interests ADD COLUMN IF NOT EXISTS notes TEXT;
+ALTER TABLE client_property_interests ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE client_property_interests ADD COLUMN IF NOT EXISTS viewed_at TIMESTAMPTZ;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS client_id UUID;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS whatsapp_chat_id VARCHAR(100);
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS assigned_agent_id UUID;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS is_ai_enabled BOOLEAN DEFAULT true;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS ai_handoff_requested BOOLEAN DEFAULT false;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS last_message_at TIMESTAMPTZ;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS unread_count INTEGER DEFAULT 0;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS conversation_id UUID;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS whatsapp_message_id VARCHAR(255);
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS direction message_direction;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS message_type message_type DEFAULT 'text';
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS status message_status DEFAULT 'pending';
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS content TEXT;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS caption TEXT;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_url VARCHAR(1000);
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_mime_type VARCHAR(100);
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_size_bytes BIGINT;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS location_lat DECIMAL(10, 8);
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS location_lng DECIMAL(11, 8);
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS location_name VARCHAR(255);
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS transcription TEXT;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS ai_processed BOOLEAN DEFAULT false;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS ai_intent VARCHAR(100);
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS ai_entities JSONB DEFAULT '{}';
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS ai_response_time_ms INTEGER;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS ai_model_used VARCHAR(100);
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS ai_tokens_used INTEGER;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS ai_cost_usd DECIMAL(10, 6);
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS sent_by UUID;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_from_ai BOOLEAN DEFAULT false;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS quoted_message_id UUID;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS reaction VARCHAR(10);
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS error_message TEXT;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS client_id UUID;
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS property_id UUID;
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS assigned_agent_id UUID;
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS title VARCHAR(255);
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS status appointment_status DEFAULT 'scheduled';
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ;
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS duration_minutes INTEGER DEFAULT 60;
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS location TEXT;
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS meeting_link VARCHAR(500);
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS notes TEXT;
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS reminder_sent BOOLEAN DEFAULT false;
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS result TEXT;
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS created_by UUID;
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS deal_number VARCHAR(50);
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS client_id UUID;
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS property_id UUID;
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS assigned_agent_id UUID;
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS status contract_status DEFAULT 'draft';
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS agreed_price DECIMAL(15, 2);
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS commission_percentage DECIMAL(5, 2);
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS commission_amount DECIMAL(12, 2);
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS payment_method VARCHAR(100);
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS payment_schedule JSONB DEFAULT '[]';
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS expected_close_date DATE;
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS actual_close_date DATE;
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS contract_url VARCHAR(1000);
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS notes TEXT;
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS created_by UUID;
+ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS client_id UUID;
+ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS follow_up_type follow_up_type;
+ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ;
+ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ;
+ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'pending';
+ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS message_content TEXT;
+ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS response_received BOOLEAN DEFAULT false;
+ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS is_cancelled BOOLEAN DEFAULT false;
+ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS cancel_reason TEXT;
+ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS user_id UUID;
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS notification_type notification_type;
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS title VARCHAR(255);
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS body TEXT;
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS data JSONB DEFAULT '{}';
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT false;
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE daily_stats ADD COLUMN IF NOT EXISTS stat_date DATE;
+ALTER TABLE daily_stats ADD COLUMN IF NOT EXISTS new_clients INTEGER DEFAULT 0;
+ALTER TABLE daily_stats ADD COLUMN IF NOT EXISTS total_messages INTEGER DEFAULT 0;
+ALTER TABLE daily_stats ADD COLUMN IF NOT EXISTS inbound_messages INTEGER DEFAULT 0;
+ALTER TABLE daily_stats ADD COLUMN IF NOT EXISTS outbound_messages INTEGER DEFAULT 0;
+ALTER TABLE daily_stats ADD COLUMN IF NOT EXISTS ai_responses INTEGER DEFAULT 0;
+ALTER TABLE daily_stats ADD COLUMN IF NOT EXISTS human_responses INTEGER DEFAULT 0;
+ALTER TABLE daily_stats ADD COLUMN IF NOT EXISTS appointments_scheduled INTEGER DEFAULT 0;
+ALTER TABLE daily_stats ADD COLUMN IF NOT EXISTS deals_closed INTEGER DEFAULT 0;
+ALTER TABLE daily_stats ADD COLUMN IF NOT EXISTS total_revenue DECIMAL(15, 2) DEFAULT 0;
+ALTER TABLE daily_stats ADD COLUMN IF NOT EXISTS ai_cost_usd DECIMAL(10, 4) DEFAULT 0;
+ALTER TABLE daily_stats ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS key VARCHAR(100);
+ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS value JSONB;
+ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS updated_by UUID;
+ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+-- ---------- Index needed for message de-duplication ----------
+CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_wa_msg_id ON messages(whatsapp_message_id);
