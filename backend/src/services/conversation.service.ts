@@ -14,6 +14,16 @@ import type {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Last pipeline failure, surfaced by /api/diagnostics so a live problem can be
+// read directly instead of inferred from the bot going quiet.
+export const lastPipelineError: { at?: string; where?: string; message?: string; stack?: string } = {};
+function recordError(where: string, e: any): void {
+  lastPipelineError.at = new Date().toISOString();
+  lastPipelineError.where = where;
+  lastPipelineError.message = e?.message ?? String(e);
+  lastPipelineError.stack = String(e?.stack ?? "").split("\n").slice(0, 4).join(" | ");
+}
+
 // =============================================================================
 // Flow State Machine
 // welcome → purpose → type → entry → location → budget → ai → escalated
@@ -214,6 +224,7 @@ export class ConversationService {
       // Bot replies 24/7 with AI. Working hours only matter when handing off to a human.
       await this.handleFlow(message, client, conversation, payload, isNew);
     } catch (error) {
+      recordError('handleWebhook', error);
       logger.error('Webhook handling failed', {
         message: (error as any)?.message,
         code: (error as any)?.code,
@@ -651,6 +662,7 @@ export class ConversationService {
 
       logger.info('AI processed', { clientId: client.id, intent: aiResult.intent.primary, props: properties.length, ms: Date.now() - startTime });
     } catch (error: any) {
+      recordError('processWithAI', error);
       logger.error('AI pipeline failed', {
         clientId: client.id,
         message: error?.message,
@@ -718,6 +730,7 @@ export class ConversationService {
       // reason to go silent on the customer for the rest of the conversation.
       await this.notifyAgent(client, conversation, 'لا توجد عقارات مطابقة — يحتاج متابعة بشرية');
     } catch (e: any) {
+      recordError('searchWithoutAI', e);
       logger.error('searchWithoutAI failed', { clientId: client.id, error: e?.message });
       await whatsappService.sendText(
         client.phone,

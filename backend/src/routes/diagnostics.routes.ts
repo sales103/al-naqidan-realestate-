@@ -3,6 +3,7 @@ import { getDatabase } from '../database/connection.js';
 import { config } from '../config/index.js';
 import { processMessage } from '../ai/agent.js';
 import { propertyService } from '../services/property.service.js';
+import { lastPipelineError } from '../services/conversation.service.js';
 
 const router = Router();
 
@@ -86,6 +87,8 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
   } catch (e: any) {
     out.checks.recent_messages = { error: e?.message?.slice(0, 200) };
   }
+
+  out.checks.last_error = lastPipelineError;
 
   res.json(out);
 });

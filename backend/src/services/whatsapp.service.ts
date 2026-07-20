@@ -18,16 +18,48 @@ export class WhatsAppService {
     });
   }
 
+  /** Names of every instance Evolution reports as connected. */
+  private async openInstances(): Promise<string[]> {
+    try {
+      const r = await this.client.get('instance/fetchInstances');
+      const list: any[] = r.data ?? [];
+      return list
+        .filter((i) => (i.connectionStatus ?? i.instance?.state) === 'open')
+        .map((i) => i.name ?? i.instanceName ?? i.instance?.instanceName)
+        .filter(Boolean);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Send text, falling back to a connected instance.
+   * The same WhatsApp account can be attached to several instances and they
+   * flip between open/close, so the instance that received a message is not
+   * always the one that can still send.
+   */
   async sendText(to: string, text: string, instance: string = config.whatsapp.instanceName): Promise<string> {
     try {
-      const response = await this.client.post(
-        `message/sendText/${instance}`,
-        { number: to, text }
-      );
+      const response = await this.client.post(`message/sendText/${instance}`, { number: to, text });
       logger.info('WhatsApp text sent', { to, instance, length: text.length });
       return response.data.key?.id ?? '';
     } catch (error: any) {
-      logger.error('WhatsApp send text failed', { to, instance, error: error.message });
+      logger.warn('WhatsApp send failed, trying a connected instance', {
+        to, instance, error: error?.message, status: error?.response?.status,
+      });
+
+      const open = (await this.openInstances()).filter((i) => i !== instance);
+      for (const alt of open) {
+        try {
+          const response = await this.client.post(`message/sendText/${alt}`, { number: to, text });
+          logger.info('WhatsApp text sent via fallback instance', { to, instance: alt });
+          return response.data.key?.id ?? '';
+        } catch { /* try the next one */ }
+      }
+
+      logger.error('WhatsApp send text failed on every instance', {
+        to, instance, tried: open, error: error?.message,
+      });
       throw error;
     }
   }
