@@ -40,6 +40,8 @@ function AISettings() {
     queryFn: () => settingsApi.get('ai'),
   });
 
+  const keyIsSaved = Boolean((data as any)?.data?.data?.openai_key_set);
+
   useEffect(() => {
     const v = (data as any)?.data?.data;
     if (v) setForm({
@@ -126,14 +128,21 @@ function AISettings() {
         </div>
 
         <div>
-          <label className="label">API Key</label>
+          <label className="label flex items-center gap-2">
+            API Key
+            {keyIsSaved && (
+              <span className="text-xs font-normal text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-0.5">
+                ✓ مفتاح محفوظ
+              </span>
+            )}
+          </label>
           <div className="relative">
             <input
               value={form.openai_key}
               onChange={e => set('openai_key', e.target.value)}
               type={showKey ? 'text' : 'password'}
               className="input pl-10 font-mono text-sm"
-              placeholder="sk-... (اتركه فارغاً إذا لم تريد تغييره)"
+              placeholder={keyIsSaved ? '•••••••••••••••• (اتركه فارغاً للإبقاء على المفتاح الحالي)' : 'sk-... الصق المفتاح هنا'}
               dir="ltr"
             />
             <button type="button" onClick={() => setShowKey(!showKey)}
@@ -141,6 +150,11 @@ function AISettings() {
               {showKey ? <EyeSlashIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
             </button>
           </div>
+          {keyIsSaved && (
+            <p className="text-xs text-green-700 mt-1">
+              المفتاح مُخزَّن. لا يُعرض هنا لحمايته — اتركه فارغاً ما لم ترد استبداله.
+            </p>
+          )}
           <p className="text-xs text-gray-400 mt-1">
             احصل على مفتاحك من <span className="font-mono bg-gray-100 px-1 rounded">{isGroq ? 'console.groq.com/keys' : 'platform.openai.com/api-keys'}</span>
           </p>

@@ -38,7 +38,15 @@ router.get('/:key', async (req: Request, res: Response, next: NextFunction): Pro
     const db = getDatabase();
     const row = await db('system_settings').where('key', req.params['key']).first();
     if (!row) { res.json({ success: true, data: null }); return; }
-    res.json({ success: true, data: row.value });
+
+    // Never send secrets back to the browser — report only whether one is stored,
+    // so the UI can show "saved" without ever displaying the value.
+    const value = { ...(row.value ?? {}) };
+    const SECRETS = ['openai_key', 'api_key', 'password', 'smtp_password'];
+    for (const k of SECRETS) {
+      if (value[k]) { value[`${k}_set`] = true; delete value[k]; }
+    }
+    res.json({ success: true, data: value });
   } catch (error) { next(error); }
 });
 
