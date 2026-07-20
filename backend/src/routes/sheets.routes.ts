@@ -105,7 +105,16 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
         } catch { /* skip invalid */ }
       }
     } else {
-      // properties
+      // The live database has drifted from the migration files — it carries columns
+      // that neither 001 nor 002 defines (e.g. a NOT NULL `type`), added by hand.
+      // So read the real column list and send only what actually exists, rather than
+      // hardcoding a set that is wrong on one side or the other.
+      const colRows = await db('information_schema.columns')
+        .select('column_name')
+        .where('table_name', 'properties')
+        .andWhere('table_schema', db.raw('current_schema()'));
+      const existingCols = new Set<string>(colRows.map((c: any) => c.column_name));
+
       const typeMap: Record<string, string> = {
         'شقة': 'apartment', 'شقة سكنية': 'apartment', 'apartment': 'apartment',
         'فيلا': 'villa', 'villa': 'villa',
@@ -201,30 +210,46 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
         const code = (sheetCode || `IMP-${batchStamp}-${rowIndex}`).slice(0, 50);
         rowIndex++;
 
+        // Superset of every spelling this table has carried. Legacy duplicates
+        // (type/area/bedrooms/city/listing_type) are filled too, because some are
+        // NOT NULL on the live database; unknown ones are dropped below.
+        const candidate: Record<string, any> = {
+          code,
+          title,
+          title_ar: title,
+          title_en: title,
+          property_type,
+          type: property_type,
+          purpose,
+          listing_type: purpose,
+          status,
+          city_id: cityRow?.id ?? null,
+          city: cityRow?.name_ar ?? cityName,
+          district_id: districtRow?.id ?? null,
+          district: district || null,
+          area_sqm: area,
+          area,
+          rooms,
+          bedrooms: rooms,
+          bathrooms,
+          floor_number,
+          price,
+          currency: 'SAR',
+          negotiable: true,
+          description_ar,
+          description: description_ar,
+          is_featured: false,
+          inquiry_count: 0,
+          view_count: 0,
+        };
+
+        const payload: Record<string, any> = {};
+        for (const [k, v] of Object.entries(candidate)) {
+          if (existingCols.has(k)) payload[k] = v;
+        }
+
         try {
-          // Only columns that exist in the schema (see 001_initial_schema.sql and
-          // 002_reconcile_existing_db.sql). Inserting anything else raises 42703.
-          await db('properties').insert({
-            code,
-            title,
-            title_ar: title,
-            property_type,
-            purpose,
-            status,
-            city_id: cityRow?.id ?? null,
-            district_id: districtRow?.id ?? null,
-            area_sqm: area,
-            rooms,
-            bathrooms,
-            floor_number,
-            price,
-            currency: 'SAR',
-            negotiable: true,
-            description_ar,
-            is_featured: false,
-            inquiry_count: 0,
-            view_count: 0,
-          });
+          await db('properties').insert(payload);
           imported++;
         } catch (err: any) {
           console.error('[IMPORT] row error:', err?.message, JSON.stringify(row));
