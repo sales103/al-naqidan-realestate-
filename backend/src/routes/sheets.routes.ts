@@ -110,10 +110,16 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
       // So read the real column list and send only what actually exists, rather than
       // hardcoding a set that is wrong on one side or the other.
       const colRows = await db('information_schema.columns')
-        .select('column_name')
+        .select('column_name', 'is_nullable', 'column_default')
         .where('table_name', 'properties')
         .andWhere('table_schema', db.raw('current_schema()'));
       const existingCols = new Set<string>(colRows.map((c: any) => c.column_name));
+
+      // Columns the table insists on that we have no value for. Without this the
+      // whole file fails with the same 23502 repeated once per row.
+      const requiredCols = colRows
+        .filter((c: any) => c.is_nullable === 'NO' && c.column_default === null)
+        .map((c: any) => c.column_name as string);
 
       const typeMap: Record<string, string> = {
         'شقة': 'apartment', 'شقة سكنية': 'apartment', 'apartment': 'apartment',
@@ -246,6 +252,16 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
         const payload: Record<string, any> = {};
         for (const [k, v] of Object.entries(candidate)) {
           if (existingCols.has(k)) payload[k] = v;
+        }
+
+        const missingRequired = requiredCols.filter(
+          (c) => !(c in payload) || payload[c] === null || payload[c] === undefined
+        );
+        if (missingRequired.length) {
+          if (failures.length < 5) {
+            failures.push(`${title}: عمود إلزامي بلا قيمة في القاعدة: ${missingRequired.join(', ')}`);
+          }
+          continue;
         }
 
         try {
