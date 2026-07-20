@@ -72,45 +72,102 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
       }
     } else {
       // properties
-      const riyadhCity = await db('cities').where('name_ar', 'like', '%الرياض%').first();
-
       const typeMap: Record<string, string> = {
-        'شقة': 'apartment', 'apartment': 'apartment',
+        'شقة': 'apartment', 'شقة سكنية': 'apartment', 'apartment': 'apartment',
         'فيلا': 'villa', 'villa': 'villa',
+        'بيت': 'villa', 'بيت شعبي': 'villa',
         'أرض': 'land', 'ارض': 'land', 'land': 'land',
         'مبنى': 'building', 'عمارة': 'building', 'building': 'building',
         'مكتب': 'office', 'office': 'office',
-        'محل': 'showroom', 'showroom': 'showroom',
+        'محل': 'showroom', 'صالة': 'showroom', 'صالة تجارية': 'showroom', 'showroom': 'showroom',
         'مستودع': 'warehouse', 'warehouse': 'warehouse',
-        'مزرعة': 'farm', 'farm': 'farm',
+        'مزرعة': 'farm', 'استراحة': 'farm', 'farm': 'farm',
         'other': 'other',
       };
 
+      const statusMap: Record<string, string> = {
+        'متاحة': 'available', 'متاح': 'available', 'available': 'available',
+        'مؤجر': 'rented', 'مؤجرة': 'rented', 'rented': 'rented',
+        'مباع': 'sold', 'مباعة': 'sold', 'sold': 'sold',
+        'محجوز': 'reserved', 'محجوزة': 'reserved', 'reserved': 'reserved',
+      };
+
       for (const row of rows) {
-        const title = String(row['العنوان'] ?? row['title'] ?? '');
+        // Support multiple possible column names
+        const rawType  = String(row['النوع'] ?? row['نوع العقار'] ?? row['type'] ?? '').trim();
+        const district = String(row['الحي'] ?? row['district'] ?? '').trim();
+        const cityName = String(row['المدينة'] ?? row['city'] ?? 'بريدة').trim() || 'بريدة';
+
+        const title = String(
+          row['العنوان'] ?? row['title'] ??
+          (rawType && district ? `${rawType} - ${district}` : '') ??
+          ''
+        ).trim();
         if (!title) continue;
-        const rawType = String(row['النوع'] ?? row['type'] ?? '').trim();
+
         const property_type = typeMap[rawType] ?? 'apartment';
+
+        const rawStatus = String(row['الحالة'] ?? row['حالة العقار'] ?? row['status'] ?? 'متاحة').trim();
+        const status = statusMap[rawStatus] ?? 'available';
+
+        // Detect listing_type from column names present in row
+        const hasRentCol = 'الإيجار السنوي (ر.س)' in row || 'الإيجار السنوي' in row || 'الإيجار' in row;
+        const listing_type = hasRentCol ? 'rent' : 'sale';
+        const purpose = hasRentCol ? 'rent' : 'sale';
+
+        const price = parseFloat(String(
+          row['السعر'] ?? row['الإيجار السنوي (ر.س)'] ?? row['الإيجار السنوي'] ??
+          row['الإيجار'] ?? row['price'] ?? '0'
+        ).replace(/,/g, '')) || 0;
+
+        const area = parseFloat(String(
+          row['المساحة'] ?? row['المساحة (م²)'] ?? row['area'] ?? '0'
+        ).replace(/,/g, '')) || null;
+
+        const rooms = parseInt(String(row['الغرف'] ?? row['عدد الغرف'] ?? row['rooms'] ?? '0')) || null;
+        const bathrooms = parseInt(String(row['الحمامات'] ?? row['bathrooms'] ?? '0')) || null;
+        const floor = String(row['الدور'] ?? row['floor'] ?? '').trim() || null;
+        const notes = String(row['ملاحظات'] ?? row['الوصف'] ?? row['description'] ?? '').trim();
+        const code = String(row['الكود'] ?? row['رقم العقار'] ?? row['code'] ?? '').trim() || null;
+
+        // Resolve city
+        let cityRow = await db('cities').where('name_ar', 'like', `%${cityName}%`).first();
+        if (!cityRow) cityRow = await db('cities').where('name_ar', 'like', '%بريدة%').first();
+        if (!cityRow) cityRow = await db('cities').where('name_ar', 'like', '%الرياض%').first();
+
+        // Resolve district
+        let districtRow = null;
+        if (district && cityRow) {
+          districtRow = await db('districts')
+            .where('city_id', cityRow.id)
+            .where('name_ar', 'like', `%${district.replace('حي ', '')}%`)
+            .first();
+        }
+
         try {
           await db('properties').insert({
-            title: title,
+            code,
+            title,
             title_ar: title,
             title_en: title,
             type: property_type,
             property_type,
-            status: 'available',
-            purpose: 'sale',
+            status,
+            purpose,
             currency: 'SAR',
-            listing_type: 'sale',
-            price: parseFloat(String(row['السعر'] ?? row['price'] ?? '0')) || 0,
-            area: parseFloat(String(row['المساحة'] ?? row['area'] ?? '0')) || null,
-            area_sqm: parseFloat(String(row['المساحة'] ?? row['area'] ?? '0')) || null,
-            bedrooms: parseInt(String(row['الغرف'] ?? row['rooms'] ?? '0')) || null,
-            rooms: parseInt(String(row['الغرف'] ?? row['rooms'] ?? '0')) || null,
-            bathrooms: parseInt(String(row['الحمامات'] ?? row['bathrooms'] ?? '0')) || null,
-            city: riyadhCity?.name_ar ?? 'الرياض',
-            city_id: riyadhCity?.id ?? null,
-            description_ar: String(row['الوصف'] ?? row['description'] ?? ''),
+            listing_type,
+            price,
+            area,
+            area_sqm: area,
+            bedrooms: rooms,
+            rooms,
+            bathrooms,
+            floor,
+            city: cityRow?.name_ar ?? cityName,
+            city_id: cityRow?.id ?? null,
+            district: district || null,
+            district_id: districtRow?.id ?? null,
+            description_ar: notes,
             is_featured: false,
             negotiable: true,
             inquiry_count: 0,
