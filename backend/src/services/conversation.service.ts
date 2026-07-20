@@ -118,6 +118,10 @@ function extractBudget(text: string, purpose?: 'rent' | 'buy'): number | undefin
   return raw * 1_000;                        // "25" when renting = 25 thousand
 }
 
+/** Rotate wording so the bot never repeats itself two steps in a row. */
+const ACKS = ['أبشر', 'الله يعطيك العافية', 'يسعدني خدمتك', 'بكل سرور', 'تمام', 'ممتاز'];
+const ack = (): string => ACKS[Math.floor(Math.random() * ACKS.length)]!;
+
 const OPEN_BUDGET = ['مفتوح', 'مو محدد', 'ما عندي', 'حسب', 'اي شي', 'مافي', 'غير محدد'];
 
 export class ConversationService {
@@ -345,13 +349,14 @@ export class ConversationService {
   private async stepWelcome(client: Client, conversation: Conversation, ctx: FlowContext): Promise<void> {
     await whatsappService.sendText(
       client.phone,
-      `${getRiyadhGreeting()}\nأهلاً بك في *مكتب عبدالحكيم النقيدان للاستثمارات العقارية* 🏢\n\nنسعد بخدمتك — اختر ما تبحث عنه:`,
+      `حياك الله 🌹\nمعك مساعد *مكتب عبدالحكيم النقيدان العقارية*.\n\nتبحث عن شراء، إيجار، أو استثمار؟`,
       this.waInstance(conversation),
     );
     await sleep(500);
     await this.askOptions(client, conversation, ctx, 'purpose', 'نوع الطلب', 'اختر ما يناسبك:', [
-      { id: 'purpose_rent', title: '🔑 إيجار', keywords: ['ايجار', 'استئجار', 'مستاجر', 'ابغى استاجر', 'للايجار'] },
-      { id: 'purpose_buy',  title: '🏠 شراء', keywords: ['شراء', 'شري', 'اشتري', 'تمليك', 'بيع', 'للبيع'] },
+      { id: 'purpose_rent',   title: '🔑 إيجار',  keywords: ['ايجار', 'استئجار', 'استاجر', 'مستاجر', 'للايجار'] },
+      { id: 'purpose_buy',    title: '🏠 شراء',   keywords: ['شراء', 'شري', 'اشتري', 'تمليك', 'بيع', 'للبيع'] },
+      { id: 'purpose_invest', title: '📈 استثمار', keywords: ['استثمار', 'استثمر', 'عائد', 'دخل'] },
     ]);
     await clientService.update(client.id, { status: 'contacted' } as any);
   }
@@ -366,7 +371,9 @@ export class ConversationService {
   ): Promise<void> {
     const choice = this.resolveChoice(clickedId, text, ctx);
     const purpose: 'rent' | 'buy' | undefined =
-      choice === 'purpose_rent' ? 'rent' : choice === 'purpose_buy' ? 'buy' : undefined;
+      choice === 'purpose_rent' ? 'rent'
+      : (choice === 'purpose_buy' || choice === 'purpose_invest') ? 'buy'
+      : undefined;
 
     if (!purpose) { await this.reAsk(client, conversation, ctx); return; }
 
@@ -459,7 +466,7 @@ export class ConversationService {
     const label = PROPERTY_TYPE_MAP[ctx.property_type ?? '']?.label ?? 'العقار';
     await whatsappService.sendText(
       client.phone,
-      `ممتاز — ${label} ✅\n\n📍 في أي *مدينة أو حي* تبحث؟\n_اكتب الاسم، مثال: بريدة — أو حي النخيل_`,
+      `${ack()} — ${label} ✅\n\nفي أي *مدينة أو حي* تبحث؟`,
       this.waInstance(conversation),
     );
   }
@@ -484,7 +491,7 @@ export class ConversationService {
       : '_مثال: 800 ألف — أو 1.5 مليون — أو مفتوح_';
     await whatsappService.sendText(
       client.phone,
-      `شكراً 🙏\n\n💰 ما هي *ميزانيتك التقريبية*؟\n${hint}`,
+      `${ack()} 🙏\n\nوش ميزانيتك التقريبية؟\n${hint}`,
       this.waInstance(conversation),
     );
   }
@@ -531,7 +538,7 @@ export class ConversationService {
 
     await whatsappService.sendText(
       client.phone,
-      `تمام ✅\n\n*ملخص طلبك*\n🏠 ${typeInfo?.label ?? 'عقار'}\n📍 ${ctx.location ?? '—'}\n💰 ${budgetStr}\n\n🔍 جاري البحث عن أفضل الخيارات المتاحة...`,
+      `${ack()} ✅\n\n🏠 ${typeInfo?.label ?? 'عقار'}\n📍 ${ctx.location ?? '—'}\n💰 ${budgetStr}\n\nلحظة أشوف لك أفضل المتاح 🔍`,
       this.waInstance(conversation),
     );
     await sleep(700);

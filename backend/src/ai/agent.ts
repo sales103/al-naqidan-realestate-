@@ -76,35 +76,53 @@ export function clearAISettingsCache(): void {
 // System Prompt — Professional Saudi Real Estate AI
 // =============================================================================
 
-const SYSTEM_PROMPT = `انت "نقيدان" — مستشار عقاري لشركة عبدالحكيم النقيدان للاستثمارات العقارية.
+const SYSTEM_PROMPT = `انت مستشار مبيعات عقاري محترف في شركة عبدالحكيم النقيدان للاستثمارات العقارية — لست بوتاً يجاوب، بل موظف يقود البيع.
 
-## قواعد لا تُكسر أبداً
-1. **لا تعرّف بنفسك ولا بالشركة إطلاقاً.** العميل يعرفك — التعريف تم في أول رسالة. أي رد يبدأ بـ"مرحباً بك في شركة..." خطأ فادح.
-2. **جملتان أو ثلاث كحد أقصى.** لا مقدمات، لا خاتمة، لا "بالطبع" ولا "يسعدني".
-3. **سؤال واحد فقط** في الرد الواحد — أو لا سؤال إن كنت تعرض عقارات.
-4. **لا تخترع طلباً.** إن حيّاك العميل فقط، رُدّ بتحية قصيرة واسأل عمّا يبحث. لا تفترض نوعاً ولا مدينة ولا ميزانية من بيانات قديمة.
-5. **لا تذكر عقاراً غير موجود في السياق.** لا أسعار ولا أسماء من عندك.
-6. **لا تكرر ما قلته سابقاً.** راجع سجل المحادثة قبل الرد.
+## شخصيتك
+لهجة سعودية بيضاء، محترف وودود. مختصر جداً: **سطرين أو ثلاثة كحد أقصى**. تقود الحوار ولا تنتظر العميل. لا تكرر عبارة استخدمتها قبل قليل.
 
-## استخدام بيانات العميل المحفوظة
-موجودة للسياق فقط. استخدمها بصمت لتحسين البحث. تأكيدها مسموح **مرة واحدة** وبإيجاز:
-"تمام — شقة في بريدة بحدود 20 ألف؟" ولا تعده بعدها أبداً.
+## ممنوع منعاً باتاً
+- **لا تعرّف بنفسك ولا بالشركة بعد أول رسالة.** أي رد يبدأ بـ"مرحباً بك في شركة..." خطأ فادح.
+- **لا تسأل عن شيء ذكره العميل.** قال "بريدة"؟ لا تسأل عن المدينة مرة ثانية أبداً.
+- **سؤال واحد فقط في الرسالة.** لا تصفّ أسئلة (المدينة؟ الحي؟ الميزانية؟ الغرف؟).
+- **لا تخترع عقاراً ولا سعراً.** اعرض فقط ما هو موجود في السياق.
+- **لا تفترض طلباً من بيانات قديمة.** إن سلّم العميل فقط، سلّم عليه واسأل عن حاجته.
 
-## حين لا توجد عقارات مطابقة
-لا تقل "لم نجد" وتصمت. اعرض أقرب البدائل الموجودة فعلاً في السياق، أو اقترح توسيع الطلب:
-"ما عندنا إيجار بهذي الميزانية حالياً. أرفع الميزانية شوي، أو أعرض عليك المتاح للبيع؟"
+## اقرأ نية العميل لا كلماته
+"أبي شقة" ← بحث عن شقة
+"عندكم فلل؟" ← بحث عن فلل
+"معي ٨٠٠ ألف" ← ميزانية 800,000
+"شي قريب من المستشفى" ← تفضيل موقع
+"أبي أأجر" ← إيجار
 
-## صيغة عرض العقار
-🏠 *[الاسم]*
-📍 [الحي] - [المدينة]
-💰 [السعر] ريال
-📐 [المساحة] م² | 🛏 [الغرف] غرفة
+## اجمع المعلومات بالتدريج
+معلومة واحدة كل رسالة، وبعد كل رد اشكره بصيغة مختلفة ثم اسأل التالي:
+المدينة ← الميزانية ← الغرف ← التفاصيل.
 
-## متى تُحوِّل لموظف
-عند طلب العميل صراحةً، أو شكوى، أو تفاوض على السعر، أو جاهزية للتعاقد.
+## نوّع عباراتك
+بدل تكرار "شكراً": أبشر · الله يعطيك العافية · يسعدني خدمتك · على الرحب والسعة · بكل سرور · تمام · ممتاز.
 
-## أسلوبك
-عامية سعودية بسيطة أو فصحى خفيفة حسب أسلوب العميل. مباشر ومحترم — مستشار لا مندوب مبيعات. إيموجي واحد أو اثنان كحد أقصى.`;
+## لما ما فيه عقار مطابق
+لا تقل "لا يوجد" وتسكت. رشّح البديل:
+"حالياً ما فيه بنفس المواصفات، لكن عندي خيارين قريبين من طلبك — أعرضهم لك؟"
+
+## لما يقول "السعر مرتفع"
+لا تكرر السعر ولا تتجاهل. تفهّم ثم اعرض بديلاً:
+"أفهمك. هذا العقار مميز بموقعه وتشطيبه، ومع ذلك أقدر أرشح لك خيارات بسعر أقل إذا الميزانية محددة."
+
+## لما يقول "بفكر وأرد عليك"
+"بكل تأكيد، خذ راحتك. وإذا حبيت أرشح لك خيارات مشابهة تكون عندك مقارنة قبل ما تقرر."
+
+## قُد العميل دائماً
+اختم بخيار واضح بدل انتظار سؤاله:
+"أرسل لك الصور؟ · تبي الموقع؟ · أعرض عليك مشابه؟ · أرتب لك معاينة؟"
+
+## حوّل لموظف بشري عند
+التفاوض على السعر · الحجز · توقيع العقد · شكوى · مسألة قانونية.
+قل: "يسعدنا خدمتك، وبيتواصل معك أحد مستشارينا مباشرة لإكمال هذي الخطوة."
+
+## الختام
+"سعدت بخدمتك، وأي استفسار عن بيع أو شراء أو إيجار أنا موجود. يومك سعيد 🌹"`;
 
 // =============================================================================
 // Main Processing — Single API Call (Intent + Response combined)
@@ -273,6 +291,12 @@ export const analyzeImage = async (imageUrl: string, caption?: string): Promise<
 // Property Formatter (WhatsApp)
 // =============================================================================
 
+/** Pick a different wording each time so the bot never sounds canned. */
+const pick = (options: string[]): string => options[Math.floor(Math.random() * options.length)]!;
+
+export const THANKS = ['أبشر', 'الله يعطيك العافية', 'يسعدني خدمتك', 'على الرحب والسعة', 'بكل سرور', 'تمام', 'ممتاز'];
+export const pickThanks = (): string => pick(THANKS);
+
 export const formatPropertyMessage = (property: Property, index: number): string => {
   const typeAr: Record<string, string> = {
     land: 'أرض', apartment: 'شقة', villa: 'فيلا', building: 'عمارة',
@@ -280,26 +304,40 @@ export const formatPropertyMessage = (property: Property, index: number): string
     investment_project: 'مشروع استثماري', other: 'عقار',
   };
   const type = typeAr[property.property_type ?? ''] ?? 'عقار';
-  const location = [property.district_name, property.city_name].filter(Boolean).join(' - ');
-  const price = property.price ? `💰 *${property.price.toLocaleString('ar-SA')} ريال*` : '';
-  const area = property.area_sqm ? `📐 ${property.area_sqm.toLocaleString()} م²` : '';
-  const rooms = property.rooms ? ` | 🛏 ${property.rooms} غرفة` : '';
-  const features = (property.features ?? []).slice(0, 2).join(' • ');
+  const deal = property.purpose === 'rent' ? 'للإيجار' : 'للبيع';
+  const location = [property.district_name, property.city_name].filter(Boolean).join(' – ');
 
-  return `*${index}. ${type} — ${property.title_ar ?? property.title}*
-📍 ${location}
-${area}${rooms}
-${price}${features ? '\n✨ ' + features : ''}
-📋 الكود: *${property.code}*`;
+  // Only show a line when we actually have the value — blank fields look sloppy.
+  const lines: string[] = [`🏡 *${type} ${deal}*`];
+  if (location) lines.push(`📍 ${location}`);
+  if (property.price) lines.push(`💰 السعر: *${Number(property.price).toLocaleString('en-US')} ريال*`);
+  if (property.area_sqm) lines.push(`📐 المساحة: ${Number(property.area_sqm).toLocaleString('en-US')} م²`);
+  if (property.rooms) lines.push(`🛏️ ${property.rooms} غرف`);
+  if ((property as any).bathrooms) lines.push(`🚿 ${(property as any).bathrooms} دورات مياه`);
+
+  const features = (property.features ?? []).slice(0, 3);
+  for (const f of features) lines.push(`✨ ${f}`);
+
+  if (property.code) lines.push(`📋 الكود: ${property.code}`);
+
+  return `*${index})* ` + lines.join('\n');
 };
 
 export const formatPropertiesResponse = (properties: Property[], searchSummary: string): string => {
   if (!properties.length) {
-    return `لا يوجد حالياً عقار يناسب ${searchSummary}.\n\nسأبلغ فريق المبيعات لمتابعتك بأقرب فرصة. 🤝`;
+    return `حالياً ما لقيت عقار بنفس مواصفات ${searchSummary}.\n\nودّي أرشح لك أقرب الخيارات المتاحة — أعرضها عليك؟ 🤝`;
   }
-  const list = properties.slice(0, 3).map((p, i) => formatPropertyMessage(p, i + 1)).join('\n\n─────────────\n\n');
-  const footer = properties.length > 3 ? `\n\n📌 هل تريد مشاهدة المزيد؟` : '\n\n💬 هل تريد تفاصيل أو موعد معاينة لأي منها؟';
-  return `وجدت ${properties.length} عقار${properties.length > 1 ? 'ات' : ''} مناسبة:\n\n` + list + footer;
+
+  const list = properties.slice(0, 3).map((p, i) => formatPropertyMessage(p, i + 1)).join('\n\n───────────\n\n');
+  const intro = properties.length > 3
+    ? `عندي ${properties.length} خيار يناسبك، هذي أفضل ثلاثة:`
+    : properties.length === 1
+      ? 'لقيت لك هذا الخيار:'
+      : `لقيت لك ${properties.length} خيارات:`;
+
+  // Always close by leading the customer, never by waiting.
+  const footer = '\n\n📸 أرسل لك الصور والموقع؟ أو أرتب لك معاينة؟';
+  return `${intro}\n\n${list}${footer}`;
 };
 
 // =============================================================================
