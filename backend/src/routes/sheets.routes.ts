@@ -45,9 +45,43 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
     const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
     const ws = wb.Sheets[wb.SheetNames[0]!];
     if (!ws) { res.status(400).json({ success: false, error: 'الملف فارغ أو تالف' }); return; }
-    const rows: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+    // Sheets often open with a merged title/subtitle before the real header row,
+    // and sheet_to_json would otherwise treat that decoration as the headers.
+    // Scan the first 20 rows for the one that looks like a header.
+    const HEADER_HINTS = [
+      'العنوان', 'النوع', 'نوع العقار', 'السعر', 'المساحة', 'الغرف', 'عدد الغرف',
+      'الحي', 'المدينة', 'الحالة', 'حالة العقار', 'الإيجار', 'الكود', 'رقم العقار',
+      'الاسم', 'الجوال', 'البريد', 'الميزانية',
+      'title', 'type', 'price', 'area', 'rooms', 'city', 'status', 'name', 'phone',
+    ];
+    // blankrows must stay true so matrix indices line up with real sheet rows,
+    // which is what `range` below expects.
+    const matrix: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', blankrows: true });
+
+    let headerRow = 0;
+    let bestScore = 0;
+    for (let i = 0; i < Math.min(matrix.length, 20); i++) {
+      const cells = (matrix[i] ?? []).map((c) => String(c).trim());
+      const score = cells.filter((c) => HEADER_HINTS.some((h) => c.includes(h))).length;
+      if (score > bestScore) { bestScore = score; headerRow = i; }
+    }
+    if (bestScore < 2) {
+      res.status(400).json({
+        success: false,
+        error: 'لم يتم العثور على صف رؤوس الأعمدة. تأكد أن الملف يحتوي أعمدة مثل: النوع، السعر، المساحة، الغرف',
+      });
+      return;
+    }
+
+    const rows: any[] = XLSX.utils.sheet_to_json(ws, {
+      range: headerRow,
+      defval: '',
+      blankrows: false,
+    });
     const db = getDatabase();
     let imported = 0;
+    const failures: string[] = [];
 
     if (type === 'clients') {
       for (const row of rows) {
@@ -92,6 +126,9 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
         'محجوز': 'reserved', 'محجوزة': 'reserved', 'reserved': 'reserved',
       };
 
+      const batchStamp = Date.now().toString(36).toUpperCase();
+      let rowIndex = 1;
+
       for (const row of rows) {
         // Support multiple possible column names
         const rawType  = String(row['النوع'] ?? row['نوع العقار'] ?? row['type'] ?? '').trim();
@@ -101,15 +138,22 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
         const explicitTitle = String(row['العنوان'] ?? row['title'] ?? '').trim();
         const title = explicitTitle || (rawType && district ? `${rawType} - ${district}` : rawType);
         if (!title) continue;
+        // Skip summary/total rows that sit at the bottom of formatted sheets
+        if (/الإجمالي|الاجمالي|المتوسط|total/i.test(title)) continue;
 
         const property_type = typeMap[rawType] ?? 'apartment';
 
         const rawStatus = String(row['الحالة'] ?? row['حالة العقار'] ?? row['status'] ?? 'متاحة').trim();
         const status = statusMap[rawStatus] ?? 'available';
 
-        // Detect purpose from column names present in row
+        // Explicit الغرض column wins; otherwise infer from a rent-named price column
+        const rawPurpose = String(row['الغرض'] ?? row['purpose'] ?? '').trim();
         const hasRentCol = 'الإيجار السنوي (ر.س)' in row || 'الإيجار السنوي' in row || 'الإيجار' in row;
-        const purpose = hasRentCol ? 'rent' : 'sale';
+        const purpose = /إيجار|ايجار|rent/i.test(rawPurpose)
+          ? 'rent'
+          : /بيع|sale/i.test(rawPurpose)
+            ? 'sale'
+            : (hasRentCol ? 'rent' : 'sale');
 
         const price = parseFloat(String(
           row['السعر'] ?? row['الإيجار السنوي (ر.س)'] ?? row['الإيجار السنوي'] ??
@@ -151,10 +195,17 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
             .first();
         }
 
+        // 002_reconcile_existing_db.sql adds `code` with no generating trigger, so it
+        // must be supplied here or the listing ends up with no code at all.
+        const sheetCode = String(row['الكود'] ?? row['رقم العقار'] ?? row['code'] ?? '').trim();
+        const code = (sheetCode || `IMP-${batchStamp}-${rowIndex}`).slice(0, 50);
+        rowIndex++;
+
         try {
-          // Only columns present in 001_initial_schema.sql — `code` is omitted so the
-          // trg_property_code trigger generates a unique one (re-imports would collide).
+          // Only columns that exist in the schema (see 001_initial_schema.sql and
+          // 002_reconcile_existing_db.sql). Inserting anything else raises 42703.
           await db('properties').insert({
+            code,
             title,
             title_ar: title,
             property_type,
@@ -177,11 +228,16 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
           imported++;
         } catch (err: any) {
           console.error('[IMPORT] row error:', err?.message, JSON.stringify(row));
+          if (failures.length < 5) failures.push(`${title}: ${err?.message ?? 'خطأ غير معروف'}`);
         }
       }
     }
 
-    res.json({ success: true, data: { imported, total: rows.length }, message: `تم استيراد ${imported} من ${rows.length} سجل` });
+    // Surface why rows were rejected — a silent "0 imported" hides the real cause.
+    const message = failures.length
+      ? `تم استيراد ${imported} من ${rows.length} سجل. سبب الفشل: ${failures.join(' | ')}`
+      : `تم استيراد ${imported} من ${rows.length} سجل`;
+    res.json({ success: true, data: { imported, total: rows.length, failures }, message });
   } catch (error) { next(error); }
 });
 
