@@ -82,9 +82,11 @@ const SYSTEM_PROMPT = `انت مستشار مبيعات عقاري محترف ف
 لهجة سعودية بيضاء، محترف وودود. مختصر جداً: **سطرين أو ثلاثة كحد أقصى**. تقود الحوار ولا تنتظر العميل. لا تكرر عبارة استخدمتها قبل قليل.
 
 ## ممنوع منعاً باتاً
+- **لا تستخدم أي إيموجي إطلاقاً.** لا في التحية ولا في القوائم ولا في أي رد. الأسلوب نصي احترافي بحت.
 - **لا تعرّف بنفسك ولا بالشركة بعد أول رسالة.** أي رد يبدأ بـ"مرحباً بك في شركة..." خطأ فادح.
-- **لا تسأل عن شيء ذكره العميل.** قال "بريدة"؟ لا تسأل عن المدينة مرة ثانية أبداً.
-- **سؤال واحد فقط في الرسالة.** لا تصفّ أسئلة (المدينة؟ الحي؟ الميزانية؟ الغرف؟).
+- **الشركة تعمل في بريدة فقط. لا تسأل عن المدينة ولا عن الحي أبداً** — هذا سؤال غير لازم ويُزعج العميل. إن ذكر العميل حياً بنفسه استخدمه، وإلا تجاهل الموضوع كلياً.
+- **لا تسأل عن شيء ذكره العميل.**
+- **سؤال واحد فقط في الرسالة.** لا تصفّ أسئلة (الميزانية؟ الغرف؟).
 - **لا تخترع عقاراً ولا سعراً.** اعرض فقط ما هو موجود في السياق.
 - **لا تفترض طلباً من بيانات قديمة.** إن سلّم العميل فقط، سلّم عليه واسأل عن حاجته.
 
@@ -97,7 +99,7 @@ const SYSTEM_PROMPT = `انت مستشار مبيعات عقاري محترف ف
 
 ## اجمع المعلومات بالتدريج
 معلومة واحدة كل رسالة، وبعد كل رد اشكره بصيغة مختلفة ثم اسأل التالي:
-المدينة ← الميزانية ← الغرف ← التفاصيل.
+الميزانية ← الغرف ← التفاصيل.
 
 ## نوّع عباراتك
 بدل تكرار "شكراً": أبشر · الله يعطيك العافية · يسعدني خدمتك · على الرحب والسعة · بكل سرور · تمام · ممتاز.
@@ -122,7 +124,7 @@ const SYSTEM_PROMPT = `انت مستشار مبيعات عقاري محترف ف
 قل: "يسعدنا خدمتك، وبيتواصل معك أحد مستشارينا مباشرة لإكمال هذي الخطوة."
 
 ## الختام
-"سعدت بخدمتك، وأي استفسار عن بيع أو شراء أو إيجار أنا موجود. يومك سعيد 🌹"`;
+"سعدت بخدمتك، وأي استفسار عن بيع أو شراء أو إيجار أنا موجود."`;
 
 // =============================================================================
 // Main Processing — Single API Call (Intent + Response combined)
@@ -355,35 +357,35 @@ export const formatPropertyMessage = (property: Property, index: number): string
   const location = [property.district_name, property.city_name].filter(Boolean).join(' – ');
 
   // Only show a line when we actually have the value — blank fields look sloppy.
-  const lines: string[] = [`🏡 *${type} ${deal}*`];
-  if (location) lines.push(`📍 ${location}`);
-  if (property.price) lines.push(`💰 السعر: *${Number(property.price).toLocaleString('en-US')} ريال*`);
-  if (property.area_sqm) lines.push(`📐 المساحة: ${Number(property.area_sqm).toLocaleString('en-US')} م²`);
-  if (property.rooms) lines.push(`🛏️ ${property.rooms} غرف`);
-  if ((property as any).bathrooms) lines.push(`🚿 ${(property as any).bathrooms} دورات مياه`);
+  const lines: string[] = [`*${type} ${deal}*`];
+  if (location) lines.push(location);
+  if (property.price) lines.push(`السعر: *${Number(property.price).toLocaleString('en-US')} ريال*`);
+  if (property.area_sqm) lines.push(`المساحة: ${Number(property.area_sqm).toLocaleString('en-US')} م²`);
+  if (property.rooms) lines.push(`${property.rooms} غرف`);
+  if ((property as any).bathrooms) lines.push(`${(property as any).bathrooms} دورات مياه`);
 
   const features = (property.features ?? []).slice(0, 3);
-  for (const f of features) lines.push(`✨ ${f}`);
+  for (const f of features) lines.push(f);
 
-  if (property.code) lines.push(`📋 الكود: ${property.code}`);
+  if (property.code) lines.push(`الكود: ${property.code}`);
 
   return `*${index})* ` + lines.join('\n');
 };
 
 export const formatPropertiesResponse = (properties: Property[], searchSummary: string): string => {
   if (!properties.length) {
-    return `حالياً ما لقيت عقار بنفس مواصفات ${searchSummary}.\n\nودّي أرشح لك أقرب الخيارات المتاحة — أعرضها عليك؟ 🤝`;
+    return `حالياً ما لقيت عقار بنفس مواصفات ${searchSummary}.\n\nودّي أرشح لك أقرب الخيارات المتاحة، أعرضها عليك؟`;
   }
 
-  const list = properties.slice(0, 3).map((p, i) => formatPropertyMessage(p, i + 1)).join('\n\n───────────\n\n');
-  const intro = properties.length > 3
-    ? `عندي ${properties.length} خيار يناسبك، هذي أفضل ثلاثة:`
-    : properties.length === 1
-      ? 'لقيت لك هذا الخيار:'
-      : `لقيت لك ${properties.length} خيارات:`;
+  // The client asked to see every matching listing, not just a top-3 sample —
+  // the catalogue is small enough (dozens, not hundreds) that this stays readable.
+  const list = properties.map((p, i) => formatPropertyMessage(p, i + 1)).join('\n\n───────────\n\n');
+  const intro = properties.length === 1
+    ? 'لقيت لك هذا الخيار:'
+    : `لقيت لك ${properties.length} خيارات:`;
 
   // Always close by leading the customer, never by waiting.
-  const footer = '\n\n📸 أرسل لك الصور والموقع؟ أو أرتب لك معاينة؟';
+  const footer = '\n\nأرسل لك الصور والموقع؟ أو أرتب لك معاينة؟';
   return `${intro}\n\n${list}${footer}`;
 };
 
@@ -400,7 +402,7 @@ const buildConversationHistory = (messages: Message[]): OpenAI.Chat.ChatCompleti
 const buildContextBlock = (client: Client, properties?: Property[]): string => {
   const now = new Date(Date.now() + 3 * 3600000); // Riyadh time
   const h = now.getHours();
-  const greeting = h < 12 ? 'صباح الخير ☀️' : h < 17 ? 'مساء الخير 🌤️' : 'مساء النور 🌙';
+  const greeting = h < 12 ? 'صباح الخير' : h < 17 ? 'مساء الخير' : 'مساء النور';
 
   let ctx = `[السياق — وقت الرياض: ${now.toLocaleTimeString('ar-SA')} — ${greeting}]
 
@@ -414,13 +416,17 @@ const buildContextBlock = (client: Client, properties?: Property[]): string => {
   if ((client as any).special_requirements) ctx += `\n- متطلبات خاصة: ${(client as any).special_requirements}`;
 
   if (properties?.length) {
-    ctx += `\n\nعقارات متاحة ومطابقة في قاعدة البيانات (اذكر تفاصيلها في ردك):\n`;
+    // The full matching list is sent right after as separate property cards —
+    // this excerpt is only so the model's own reply can reference real numbers,
+    // not a second full listing, so it stays short even when matches run into
+    // the dozens.
+    ctx += `\n\nعقارات متاحة ومطابقة في قاعدة البيانات (${properties.length} إجمالاً — القائمة الكاملة ستُرسل بعد ردك كبطاقات منفصلة، لا تكررها هنا):\n`;
     ctx += properties.slice(0, 5).map((p, i) => {
       const typeAr: Record<string, string> = { land:'أرض', apartment:'شقة', villa:'فيلا', building:'عمارة', office:'مكتب', showroom:'معرض', warehouse:'مستودع', farm:'مزرعة', investment_project:'مشروع استثماري', other:'أخرى' };
       const loc = [p.district_name, p.city_name].filter(Boolean).join(' - ');
-      return `${i+1}. ${typeAr[p.property_type??'']??'عقار'}: ${p.title_ar??p.title} | 💰 ${p.price?.toLocaleString('ar-SA')} ريال | 📐 ${p.area_sqm??'؟'} م² | 🛏 ${p.rooms??'؟'} | 📍 ${loc} | كود: ${p.code}`;
+      return `${i+1}. ${typeAr[p.property_type??'']??'عقار'}: ${p.title_ar??p.title} | ${p.price?.toLocaleString('ar-SA')} ريال | ${p.area_sqm??'؟'} م² | ${p.rooms??'؟'} غرف | ${loc} | كود: ${p.code}`;
     }).join('\n');
-    ctx += '\n\nمهم: اعرض هذه العقارات بالصيغة المطلوبة في ردك.';
+    ctx += '\n\nمهم: لا تسرد كل العقارات في ردك النصي — اذكر فقط أنك وجدت خيارات مناسبة، القائمة الكاملة ستصل بعدك تلقائياً.';
   }
 
   return ctx;
@@ -434,7 +440,8 @@ const buildSearchParams = (data: AIExtractedData): PropertySearchParams => ({
   area_max: data.area_max,
   rooms: data.rooms,
   purpose: data.purpose,
-  limit: 5,
+  // The client wants every matching listing sent, not a top-5 sample.
+  limit: 200,
   sort_by: 'featured',
 });
 

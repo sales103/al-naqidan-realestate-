@@ -110,12 +110,12 @@ export function detectComplaint(text: string): ComplaintSignal {
 /** Opening line — calmer and shorter the angrier the customer is. */
 export function acknowledgement(level: AngerLevel): string {
   if (level >= 4) {
-    return 'أعتذر لك بشدة عن هذي التجربة 🙏\nأنا معك الآن، وبرفع حالتك للمختص فوراً.';
+    return 'أعتذر لك بشدة عن هذي التجربة\nأنا معك الآن، وبرفع حالتك للمختص فوراً.';
   }
   if (level === 3) {
-    return 'أعتذر عن التجربة اللي مررت فيها 🙏\nأبغى أفهم التفاصيل عشان أساعدك صح.';
+    return 'أعتذر عن التجربة اللي مررت فيها\nأبغى أفهم التفاصيل عشان أساعدك صح.';
   }
-  return 'أعتذر على التأخير 🙏\nوش المشكلة بالضبط عشان أتابعها لك؟';
+  return 'أعتذر على التأخير\nوش المشكلة بالضبط عشان أتابعها لك؟';
 }
 
 /** What we still need before handing over. */
@@ -153,9 +153,9 @@ export function buildAgentSummary(input: {
 /** Closing line before a human takes over. */
 export function handoverLine(level: AngerLevel): string {
   if (level >= 3) {
-    return 'رفعت حالتك للمختص بأولوية عالية، وبيتواصل معك في أقرب وقت.\nمن حقك تقدم أي ملاحظة، وهدفنا نعالج الموضوع بأسرع وقت 🤝';
+    return 'رفعت حالتك للمختص بأولوية عالية، وبيتواصل معك في أقرب وقت.\nمن حقك تقدم أي ملاحظة، وهدفنا نعالج الموضوع بأسرع وقت.';
   }
-  return 'سجّلت شكواك ورفعتها للمختص مع كل التفاصيل، وبيتواصل معك قريباً 🤝';
+  return 'سجّلت شكواك ورفعتها للمختص مع كل التفاصيل، وبيتواصل معك قريباً.';
 }
 
 /** Guidance injected into the AI when the conversation is a complaint. */

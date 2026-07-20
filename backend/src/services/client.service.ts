@@ -155,7 +155,7 @@ export class ClientService {
     if (req) parts.push(`متطلبات: ${req}`);
     const intent = newData.intent?.intent ?? '';
     if (intent === 'appointment_request') parts.push('يريد موعد معاينة');
-    if (intent === 'human_agent_request') parts.push('⚠️ طلب التحدث مع موظف');
+    if (intent === 'human_agent_request') parts.push('طلب التحدث مع موظف');
     return parts.length ? parts.join(' | ') : 'عميل جديد — لم تُحدد الاحتياجات بعد';
   }
 

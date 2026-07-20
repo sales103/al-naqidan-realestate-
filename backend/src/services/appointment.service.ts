@@ -20,7 +20,7 @@ export class AppointmentService {
     const client = await this.db('clients').where('id', data.client_id).first();
     if (client) {
       const dateStr = format(new Date(data.scheduled_at), "EEEE d MMMM yyyy 'الساعة' HH:mm", { locale: ar });
-      const msg = `📅 *تأكيد موعدك*\n\nأهلاً ${client.full_name}،\nتم تحديد موعدك:\n📌 ${data.title}\n🗓 ${dateStr}\n${data.location ? '📍 ' + data.location + '\n' : ''}نتطلع للقائك! 🤝\n\nشركة النقيدان للاستثمارات العقارية`;
+      const msg = `*تأكيد موعدك*\n\nأهلاً ${client.full_name}،\nتم تحديد موعدك:\n${data.title}\n${dateStr}\n${data.location ? data.location + '\n' : ''}نتطلع للقائك.\n\nشركة النقيدان للاستثمارات العقارية`;
       await whatsappService.sendText(client.phone, msg).catch((err) =>
         logger.warn('Failed to notify client of appointment', { err })
       );
@@ -68,7 +68,7 @@ export class AppointmentService {
     for (const appt of appointments) {
       try {
         const dateStr = format(new Date(appt.scheduled_at), "EEEE d MMMM 'الساعة' HH:mm", { locale: ar });
-        const msg = `⏰ *تذكير بموعد غداً*\n\nأهلاً ${appt.client_name}،\nتذكير بموعدكم:\n📌 ${appt.title}\n🗓 ${dateStr}\n${appt.location ? '📍 ' + appt.location : ''}\n\nنتطلع للقائك! 🤝`;
+        const msg = `*تذكير بموعد غداً*\n\nأهلاً ${appt.client_name}،\nتذكير بموعدكم:\n${appt.title}\n${dateStr}\n${appt.location ? appt.location : ''}\n\nنتطلع للقائك.`;
         await whatsappService.sendText(appt.client_phone, msg);
         await this.db('appointments').where('id', appt.id).update({ reminder_sent: true });
       } catch (err) {

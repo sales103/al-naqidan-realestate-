@@ -33,7 +33,7 @@ function recordError(where: string, e: any): void {
 // welcome → purpose → type → entry → location → budget → ai → escalated
 // =============================================================================
 
-type FlowState = 'welcome' | 'purpose' | 'type' | 'entry' | 'location' | 'budget' | 'ai' | 'complaint' | 'escalated';
+type FlowState = 'welcome' | 'purpose' | 'type' | 'entry' | 'budget' | 'ai' | 'complaint' | 'escalated';
 
 /** One selectable option. `keywords` let the customer answer in their own words. */
 interface FlowOption {
@@ -50,6 +50,8 @@ interface FlowContext {
   budget?: number;
   /** Options last offered, so a bare "2" can be resolved back to its option. */
   pending?: FlowOption[];
+  /** Property ids already sent to this client, so a later search never repeats them. */
+  shown_property_ids?: string[];
   /** Complaint mode: the bot stays here until a human takes over. */
   complaint?: {
     level: AngerLevel;
@@ -101,9 +103,9 @@ function normalizeAr(s: string): string {
 
 function getRiyadhGreeting(): string {
   const h = new Date(Date.now() + 3 * 3600000).getHours();
-  if (h < 12) return 'صباح الخير ☀️';
-  if (h < 17) return 'مساء الخير 🌤';
-  return 'مساء النور 🌙';
+  if (h < 12) return 'صباح الخير';
+  if (h < 17) return 'مساء الخير';
+  return 'مساء النور';
 }
 
 /**
@@ -272,7 +274,7 @@ export class ConversationService {
     const normText = normalizeAr((message.content ?? ''));
     if (normText && RESTART.some(w => normText.includes(normalizeAr(w)))) {
       await this.saveFlowContext(conversation.id, { state: 'welcome' });
-      await whatsappService.sendText(client.phone, 'تمام، نبدأ من جديد 👌', this.waInstance(conversation));
+      await whatsappService.sendText(client.phone, 'تمام، نبدأ من جديد', this.waInstance(conversation));
       await sleep(400);
       await this.stepWelcome(client, conversation, { state: 'welcome' });
       return;
@@ -292,7 +294,6 @@ export class ConversationService {
     if (ctx.state === 'purpose') { await this.stepPurpose(clickedId, text, client, conversation, ctx); return; }
     if (ctx.state === 'type') { await this.stepType(clickedId, text, client, conversation, ctx); return; }
     if (ctx.state === 'entry') { await this.stepEntry(clickedId, text, client, conversation, ctx); return; }
-    if (ctx.state === 'location') { await this.stepLocation(text, client, conversation, ctx); return; }
     if (ctx.state === 'budget') { await this.stepBudget(text, client, conversation, ctx, message); return; }
   }
 
@@ -355,7 +356,7 @@ export class ConversationService {
     const menu = options.map((o, i) => `${i + 1}. ${o.title}`).join('\n');
     await whatsappService.sendText(
       client.phone,
-      `لم أفهم اختيارك 🙂\nاختر من القائمة أو أرسل الرقم:\n\n${menu}`,
+      `لم أفهم اختيارك\nاختر من القائمة أو أرسل الرقم:\n\n${menu}`,
       this.waInstance(conversation),
     );
   }
@@ -444,14 +445,14 @@ export class ConversationService {
   private async stepWelcome(client: Client, conversation: Conversation, ctx: FlowContext): Promise<void> {
     await whatsappService.sendText(
       client.phone,
-      `حياك الله 🌹\nمعك مساعد *مكتب عبدالحكيم النقيدان العقارية*.\n\nتبحث عن شراء، إيجار، أو استثمار؟`,
+      `حياك الله\nمعك مساعد *مكتب عبدالحكيم النقيدان العقارية*.\n\nتبحث عن شراء، إيجار، أو استثمار؟`,
       this.waInstance(conversation),
     );
     await sleep(500);
     await this.askOptions(client, conversation, ctx, 'purpose', 'نوع الطلب', 'اختر ما يناسبك:', [
-      { id: 'purpose_rent',   title: '🔑 إيجار',  keywords: ['ايجار', 'استئجار', 'استاجر', 'مستاجر', 'للايجار'] },
-      { id: 'purpose_buy',    title: '🏠 شراء',   keywords: ['شراء', 'شري', 'اشتري', 'تمليك', 'بيع', 'للبيع'] },
-      { id: 'purpose_invest', title: '📈 استثمار', keywords: ['استثمار', 'استثمر', 'عائد', 'دخل'] },
+      { id: 'purpose_rent',   title: 'إيجار',  keywords: ['ايجار', 'استئجار', 'استاجر', 'مستاجر', 'للايجار'] },
+      { id: 'purpose_buy',    title: 'شراء',   keywords: ['شراء', 'شري', 'اشتري', 'تمليك', 'بيع', 'للبيع'] },
+      { id: 'purpose_invest', title: 'استثمار', keywords: ['استثمار', 'استثمر', 'عائد', 'دخل'] },
     ]);
     await clientService.update(client.id, { status: 'contacted' } as any);
   }
@@ -474,16 +475,16 @@ export class ConversationService {
 
     const options: FlowOption[] = purpose === 'rent'
       ? [
-          { id: 'type_apt_family', title: '🏘 شقة عوائل', keywords: ['شقه عوايل', 'عوايل', 'عائله', 'شقه عائليه', 'شقه'] },
-          { id: 'type_apt_single', title: '👤 شقة عزاب',  keywords: ['عزاب', 'شقه عزاب', 'اعزب', 'مفرد'] },
-          { id: 'type_house',      title: '🏡 بيت',        keywords: ['بيت', 'دار', 'منزل', 'فيلا'] },
-          { id: 'type_commercial', title: '🏪 محل أو صالة تجارية', keywords: ['تجاري', 'محل', 'صاله', 'معرض', 'مكتب', 'مستودع'] },
+          { id: 'type_apt_family', title: 'شقة عوائل', keywords: ['شقه عوايل', 'عوايل', 'عائله', 'شقه عائليه', 'شقه'] },
+          { id: 'type_apt_single', title: 'شقة عزاب',  keywords: ['عزاب', 'شقه عزاب', 'اعزب', 'مفرد'] },
+          { id: 'type_house',      title: 'بيت',        keywords: ['بيت', 'دار', 'منزل', 'فيلا'] },
+          { id: 'type_commercial', title: 'محل أو صالة تجارية', keywords: ['تجاري', 'محل', 'صاله', 'معرض', 'مكتب', 'مستودع'] },
         ]
       : [
-          { id: 'type_apt_family', title: '🏘 شقة', keywords: ['شقه', 'شقق', 'دور'] },
-          { id: 'type_house',      title: '🏡 فيلا أو بيت', keywords: ['فيلا', 'بيت', 'منزل', 'دار', 'قصر'] },
-          { id: 'type_land',       title: '📍 أرض', keywords: ['ارض', 'اراضي', 'قطعه'] },
-          { id: 'type_commercial', title: '🏢 عقار تجاري', keywords: ['تجاري', 'محل', 'صاله', 'مكتب', 'مستودع', 'عماره'] },
+          { id: 'type_apt_family', title: 'شقة', keywords: ['شقه', 'شقق', 'دور'] },
+          { id: 'type_house',      title: 'فيلا أو بيت', keywords: ['فيلا', 'بيت', 'منزل', 'دار', 'قصر'] },
+          { id: 'type_land',       title: 'أرض', keywords: ['ارض', 'اراضي', 'قطعه'] },
+          { id: 'type_commercial', title: 'عقار تجاري', keywords: ['تجاري', 'محل', 'صاله', 'مكتب', 'مستودع', 'عماره'] },
         ];
 
     await this.askOptions(
@@ -506,18 +507,18 @@ export class ConversationService {
 
     if (choice === 'type_house') {
       await this.askOptions(client, conversation, ctx, 'entry', 'نوع المدخل', 'ما نوع المدخل المطلوب؟', [
-        { id: 'entry_private', title: '🔒 مدخل خاص',   keywords: ['خاص', 'مستقل', 'منفصل'] },
-        { id: 'entry_shared',  title: '🚪 مدخل مشترك', keywords: ['مشترك', 'عام'] },
+        { id: 'entry_private', title: 'مدخل خاص',   keywords: ['خاص', 'مستقل', 'منفصل'] },
+        { id: 'entry_shared',  title: 'مدخل مشترك', keywords: ['مشترك', 'عام'] },
       ]);
       return;
     }
 
     if (choice === 'type_commercial') {
       await this.askOptions(client, conversation, ctx, 'entry', 'النشاط التجاري', 'حدد ما تحتاجه:', [
-        { id: 'com_shop',    title: '🏪 محل',     keywords: ['محل', 'دكان'] },
-        { id: 'com_hall',    title: '🏬 صالة',    keywords: ['صاله', 'معرض'] },
-        { id: 'com_office',  title: '🏢 مكتب',    keywords: ['مكتب', 'اداري'] },
-        { id: 'com_storage', title: '📦 مستودع',  keywords: ['مستودع', 'مخزن'] },
+        { id: 'com_shop',    title: 'محل',     keywords: ['محل', 'دكان'] },
+        { id: 'com_hall',    title: 'صالة',    keywords: ['صاله', 'معرض'] },
+        { id: 'com_office',  title: 'مكتب',    keywords: ['مكتب', 'اداري'] },
+        { id: 'com_storage', title: 'مستودع',  keywords: ['مستودع', 'مخزن'] },
       ], { property_type: 'commercial' });
       return;
     }
@@ -530,7 +531,7 @@ export class ConversationService {
     const propType = map[choice];
     if (!propType) { await this.reAsk(client, conversation, ctx); return; }
 
-    await this.askLocation(client, conversation, { ...ctx, property_type: propType });
+    await this.askBudget(client, conversation, { ...ctx, property_type: propType });
   }
 
   // ===========================================================================
@@ -549,44 +550,24 @@ export class ConversationService {
     const finalType = choice ? map[choice] : undefined;
     if (!finalType) { await this.reAsk(client, conversation, ctx); return; }
 
-    await this.askLocation(client, conversation, { ...ctx, property_type: finalType });
+    await this.askBudget(client, conversation, { ...ctx, property_type: finalType });
   }
 
   // ===========================================================================
-  // Step 4 — Location
+  // Step 4 — Budget
+  // The office operates in Buraydah only, so there is no city/district to ask
+  // about — go straight from the property type to budget.
   // ===========================================================================
 
-  private async askLocation(client: Client, conversation: Conversation, ctx: FlowContext): Promise<void> {
-    await this.saveFlowContext(conversation.id, { ...ctx, state: 'location', pending: undefined });
+  private async askBudget(client: Client, conversation: Conversation, ctx: FlowContext): Promise<void> {
+    await this.saveFlowContext(conversation.id, { ...ctx, state: 'budget', location: 'بريدة', pending: undefined });
     const label = PROPERTY_TYPE_MAP[ctx.property_type ?? '']?.label ?? 'العقار';
-    await whatsappService.sendText(
-      client.phone,
-      `${ack()} — ${label} ✅\n\nفي أي *مدينة أو حي* تبحث؟`,
-      this.waInstance(conversation),
-    );
-  }
-
-  private async stepLocation(
-    text: string, client: Client, conversation: Conversation, ctx: FlowContext,
-  ): Promise<void> {
-    const location = text.trim();
-    if (normalizeAr(location).length < 2) {
-      await whatsappService.sendText(
-        client.phone, '📍 اكتب اسم المدينة أو الحي من فضلك\n_مثال: بريدة — أو حي الروضة_',
-        this.waInstance(conversation),
-      );
-      return;
-    }
-
-    await this.saveFlowContext(conversation.id, { ...ctx, state: 'budget', location, pending: undefined });
-    await clientService.update(client.id, { district: location } as any);
-
     const hint = ctx.purpose === 'rent'
       ? '_مثال: 20 ألف — أو اكتب 20 فقط — أو مفتوح_'
       : '_مثال: 800 ألف — أو 1.5 مليون — أو مفتوح_';
     await whatsappService.sendText(
       client.phone,
-      `${ack()} 🙏\n\nوش ميزانيتك التقريبية؟\n${hint}`,
+      `${ack()} — ${label}\n\nوش ميزانيتك التقريبية؟\n${hint}`,
       this.waInstance(conversation),
     );
   }
@@ -605,7 +586,7 @@ export class ConversationService {
     if (!budget && !isOpen) {
       await whatsappService.sendText(
         client.phone,
-        `💰 اكتب الميزانية بالأرقام من فضلك\n${ctx.purpose === 'rent' ? '_مثال: 20 ألف — أو 20_' : '_مثال: 800 ألف — أو 1.5 مليون_'}\nأو اكتب *مفتوح* إذا لم تحددها بعد`,
+        `اكتب الميزانية بالأرقام من فضلك\n${ctx.purpose === 'rent' ? '_مثال: 20 ألف — أو 20_' : '_مثال: 800 ألف — أو 1.5 مليون_'}\nأو اكتب *مفتوح* إذا لم تحددها بعد`,
         this.waInstance(conversation),
       );
       return;
@@ -629,11 +610,11 @@ export class ConversationService {
       ? budget >= 1_000_000 ? `${(budget / 1_000_000).toFixed(1)} مليون ريال` : `${Math.round(budget / 1_000)} ألف ريال`
       : 'ميزانية مفتوحة';
 
-    message.content = `أبحث عن ${typeInfo?.label ?? ctx.property_type ?? 'عقار'} لـ${purposeAr} في ${ctx.location ?? ''} بميزانية ${budgetStr}`;
+    message.content = `أبحث عن ${typeInfo?.label ?? ctx.property_type ?? 'عقار'} لـ${purposeAr} في بريدة بميزانية ${budgetStr}`;
 
     await whatsappService.sendText(
       client.phone,
-      `${ack()} ✅\n\n🏠 ${typeInfo?.label ?? 'عقار'}\n📍 ${ctx.location ?? '—'}\n💰 ${budgetStr}\n\nلحظة أشوف لك أفضل المتاح 🔍`,
+      `${ack()}\n\n${typeInfo?.label ?? 'عقار'}\n${budgetStr}\n\nلحظة أشوف لك أفضل المتاح`,
       this.waInstance(conversation),
     );
     await sleep(700);
@@ -670,12 +651,14 @@ export class ConversationService {
 
       const history = await this.getConversationHistory(conversation.id, 10);
 
-      // Pre-search using flow context
+      // Pre-search using flow context. The office operates in Buraydah only, so
+      // there is no city/district to filter by — every listing already is one.
       let preloadedProperties: any[] = [];
       try {
         const typeInfo = PROPERTY_TYPE_MAP[ctx.property_type ?? ''];
         const clientTypes: string[] = (client as any).preferred_property_types ?? [];
-        const params: any = { status: 'available', limit: 5, sort_by: 'featured' };
+        // The client wants every matching listing, not a capped sample.
+        const params: any = { status: 'available', limit: 200, sort_by: 'featured' };
 
         const budget = ctx.budget ?? extractBudget(messageContent) ?? (client as any).budget_max;
         if (budget) params.price_max = budget;
@@ -683,22 +666,11 @@ export class ConversationService {
         const resolvedType = typeInfo?.db_types[0] ?? clientTypes[0];
         if (resolvedType) params.property_type = resolvedType;
 
-        const location = ctx.location ?? (client as any).district;
-        if (location) {
-          const cityId = await propertyService.resolveCityId(location);
-          if (cityId) params.city_ids = [cityId];
-          else {
-            const distId = await propertyService.resolveDistrictId(location);
-            if (distId) params.district_ids = [distId];
-          }
-        }
-
         const preResult = await propertyService.search(params);
         preloadedProperties = preResult.properties;
 
-        if (preloadedProperties.length === 0) {
-          const relaxed = { ...params, city_ids: undefined, district_ids: undefined, price_max: budget ? budget * 1.3 : undefined };
-          preloadedProperties = (await propertyService.search(relaxed)).properties;
+        if (preloadedProperties.length === 0 && budget) {
+          preloadedProperties = (await propertyService.search({ ...params, price_max: budget * 1.3 })).properties;
         }
       } catch { /* continue */ }
 
@@ -735,7 +707,20 @@ export class ConversationService {
         const result = await propertyService.search(enriched);
         properties = result.properties;
         searchSummary = this.buildSearchSummary(ctx, aiResult.extracted_data);
-        for (const prop of properties.slice(0, 3)) {
+      } else if (preloadedProperties.length > 0 && ctx.state === 'ai') {
+        properties = preloadedProperties;
+        searchSummary = this.buildSearchSummary(ctx, aiResult.extracted_data);
+      }
+
+      // Never repeat a listing already sent earlier in this conversation.
+      const shownIds = new Set(ctx.shown_property_ids ?? []);
+      const matchedBeforeDedup = properties.length;
+      properties = properties.filter((p) => !shownIds.has(p.id));
+      const allAlreadyShown = matchedBeforeDedup > 0 && properties.length === 0;
+
+      let latestCtx = ctx;
+      if (properties.length > 0) {
+        for (const prop of properties) {
           // Analytics only — must never block sending properties to the client.
           try {
             await propertyService.incrementInquiryCount(prop.id);
@@ -746,15 +731,17 @@ export class ConversationService {
             logger.warn('interest tracking skipped', { error: e?.message });
           }
         }
-      } else if (preloadedProperties.length > 0 && ctx.state === 'ai') {
-        properties = preloadedProperties.slice(0, 3);
-        searchSummary = this.buildSearchSummary(ctx, aiResult.extracted_data);
+        latestCtx = { ...ctx, shown_property_ids: [...shownIds, ...properties.map((p) => p.id)] };
+        await this.saveFlowContext(conversation.id, latestCtx);
       }
 
       let responseText = aiResult.response;
+      if (allAlreadyShown) {
+        responseText = `${responseText}\n\nهذي كل الخيارات المتوفرة حالياً وسبق أن أرسلتها لك، لا يوجد جديد غيرها حالياً.`;
+      }
       if (aiResult.should_escalate) {
         await this.db('conversations').where('id', conversation.id).update({ ai_handoff_requested: true, updated_at: new Date() });
-        await this.saveFlowContext(conversation.id, { ...ctx, state: 'escalated' });
+        await this.saveFlowContext(conversation.id, { ...latestCtx, state: 'escalated' });
         await this.notifyAgent(client, conversation, aiResult.escalation_reason);
         // Only when a human takes over do working hours matter.
         responseText = `${responseText}\n\n${this.handoffNote()}`;
@@ -797,21 +784,14 @@ export class ConversationService {
    */
   private async searchWithoutAI(client: Client, conversation: Conversation, ctx: FlowContext): Promise<void> {
     try {
-      const params: any = { status: 'available', limit: 3, sort_by: 'featured' };
+      // The client wants every matching listing, not a capped sample. No city
+      // filter either — the office operates in Buraydah only.
+      const params: any = { status: 'available', limit: 200, sort_by: 'featured' };
 
       const typeInfo = PROPERTY_TYPE_MAP[ctx.property_type ?? ''];
       if (typeInfo?.db_types?.[0]) params.property_type = typeInfo.db_types[0];
       if (ctx.budget) params.price_max = ctx.budget;
       if (ctx.purpose) params.purpose = ctx.purpose === 'rent' ? 'rent' : 'sale';
-
-      if (ctx.location) {
-        const cityId = await propertyService.resolveCityId(ctx.location);
-        if (cityId) params.city_ids = [cityId];
-        else {
-          const distId = await propertyService.resolveDistrictId(ctx.location);
-          if (distId) params.district_ids = [distId];
-        }
-      }
 
       let { properties } = await propertyService.search(params);
 
@@ -823,14 +803,22 @@ export class ConversationService {
         ({ properties } = await propertyService.search({ ...params, price_max: params.price_max * 1.3 }));
       }
 
+      // Never repeat a listing already sent earlier in this conversation.
+      const shownIds = new Set(ctx.shown_property_ids ?? []);
+      properties = properties.filter((p) => !shownIds.has(p.id));
+
       if (properties.length > 0) {
         await whatsappService.sendProperties(
           client.phone, properties, this.buildSearchSummary(ctx, {}), this.waInstance(conversation),
         );
+        await this.saveFlowContext(conversation.id, {
+          ...ctx,
+          shown_property_ids: [...shownIds, ...properties.map((p) => p.id)],
+        });
         await sleep(400);
         await whatsappService.sendText(
           client.phone,
-          'هل تود ترتيب *موعد معاينة* لأي منها؟ اكتب رقم العقار أو اسأل عن أي تفاصيل 🏠',
+          'هل تود ترتيب موعد معاينة لأي منها؟ اكتب رقم العقار أو اسأل عن أي تفاصيل',
           this.waInstance(conversation),
         );
         return;
@@ -838,7 +826,7 @@ export class ConversationService {
 
       await whatsappService.sendText(
         client.phone,
-        'لم أجد حالياً عقاراً مطابقاً لطلبك تماماً 🔍\n\nسجّلت طلبك وسيتواصل معك أحد مستشارينا بأقرب الخيارات المتاحة.\n\n' + this.handoffNote(),
+        'لم أجد حالياً عقاراً مطابقاً لطلبك تماماً.\n\nسجّلت طلبك وسيتواصل معك أحد مستشارينا بأقرب الخيارات المتاحة.\n\n' + this.handoffNote(),
         this.waInstance(conversation),
       );
       // Notify the team, but keep the bot listening: an empty result is not a
@@ -849,7 +837,7 @@ export class ConversationService {
       logger.error('searchWithoutAI failed', { clientId: client.id, error: e?.message });
       await whatsappService.sendText(
         client.phone,
-        'شكراً لتواصلك 🙏\nسيتواصل معك أحد مستشارينا لمساعدتك.\n\n' + this.handoffNote(),
+        'شكراً لتواصلك\nسيتواصل معك أحد مستشارينا لمساعدتك.\n\n' + this.handoffNote(),
         this.waInstance(conversation),
       );
     }
@@ -936,21 +924,20 @@ export class ConversationService {
   // Within working hours → contacted shortly; outside → shown the working hours.
   private handoffNote(): string {
     if (this.isWithinWorkingHours()) {
-      return '👤 سيتواصل معك أحد مستشارينا خلال لحظات لمساعدتك. 🤝';
+      return 'سيتواصل معك أحد مستشارينا خلال لحظات لمساعدتك.';
     }
-    return '👤 سيتواصل معك أحد مستشارينا في أقرب وقت خلال ساعات العمل:\n🌅 صباحاً: 9:30 - 12:00\n🌆 مساءً: 4:00 - 9:30\n\nونحن سعداء بخدمتك دائماً. 🏠';
+    return 'سيتواصل معك أحد مستشارينا في أقرب وقت خلال ساعات العمل:\nصباحاً: 9:30 - 12:00\nمساءً: 4:00 - 9:30\n\nونحن سعداء بخدمتك دائماً.';
   }
 
   private async enrichSearchParams(params: PropertySearchParams, extracted: any, ctx: FlowContext): Promise<PropertySearchParams> {
     const enriched = { ...params };
-    const location = ctx.location ?? extracted.city ?? extracted.district;
-    if (location) {
-      const cityId = await propertyService.resolveCityId(location);
-      if (cityId) enriched.city_ids = [cityId];
-      else {
-        const distId = await propertyService.resolveDistrictId(location);
-        if (distId) enriched.district_ids = [distId];
-      }
+    // Buraydah is implicit for the whole business — only filter when the
+    // customer volunteers a specific district, so a mention still narrows results.
+    void ctx;
+    const district = extracted.district ?? extracted.city;
+    if (district) {
+      const distId = await propertyService.resolveDistrictId(district);
+      if (distId) enriched.district_ids = [distId];
     }
     return enriched;
   }
@@ -959,7 +946,7 @@ export class ConversationService {
     const parts: string[] = [];
     const typeInfo = PROPERTY_TYPE_MAP[ctx.property_type ?? ''];
     if (typeInfo) parts.push(typeInfo.label);
-    const loc = ctx.location ?? extracted.district ?? extracted.city;
+    const loc = extracted.district ?? extracted.city;
     if (loc) parts.push(`في ${loc}`);
     const budget = ctx.budget ?? extracted.budget_max;
     if (budget) parts.push(`بميزانية ${budget >= 1_000_000 ? (budget/1_000_000).toFixed(1)+' مليون' : (budget/1_000).toFixed(0)+' ألف'} ريال`);

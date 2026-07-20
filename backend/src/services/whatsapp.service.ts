@@ -118,10 +118,11 @@ export class WhatsAppService {
     const textMessage = formatPropertiesResponse(properties, searchSummary);
     await this.sendText(to, textMessage, instance);
 
-    // Send main image for each property (max 3)
-    for (const prop of properties.slice(0, 3)) {
+    // The client wants a photo with every matching listing, not just the top
+    // few — send one per property regardless of how many matched.
+    for (const prop of properties) {
       if (prop.main_image_url) {
-        const caption = `🏠 ${prop.title_ar ?? prop.title}\n📍 ${prop.district_name ?? ''} - ${prop.city_name ?? ''}\n💰 ${prop.price?.toLocaleString('ar-SA') ?? ''} ريال\n🔗 ${prop.code}`;
+        const caption = `${prop.title_ar ?? prop.title}\n${prop.district_name ?? ''} - ${prop.city_name ?? ''}\n${prop.price?.toLocaleString('ar-SA') ?? ''} ريال\n${prop.code}`;
         await this.sendImage(to, prop.main_image_url, caption, instance);
         await this.delay(500);
       }
@@ -198,7 +199,7 @@ export class WhatsAppService {
       );
     } catch {
       // Fallback to text if buttons not supported
-      const text = `${title}\n${body}\n\n${buttons.map((b, i) => `${['1️⃣','2️⃣','3️⃣','4️⃣'][i] ?? `${i+1}.`} ${b.text}`).join('\n')}`;
+      const text = `${title}\n${body}\n\n${buttons.map((b, i) => `${i + 1}. ${b.text}`).join('\n')}`;
       await this.sendText(to, text, instance);
     }
   }
@@ -243,10 +244,10 @@ export class WhatsAppService {
   getRiyadhGreeting(): string {
     const utc = Date.now() + new Date().getTimezoneOffset() * 60000;
     const riyadhHour = new Date(utc + 3 * 3600000).getHours();
-    if (riyadhHour >= 5 && riyadhHour < 12) return 'صباح الخير ☀️';
-    if (riyadhHour >= 12 && riyadhHour < 17) return 'مساء الخير 🌤️';
-    if (riyadhHour >= 17 && riyadhHour < 22) return 'مساء النور 🌙';
-    return 'أهلاً بك 👋';
+    if (riyadhHour >= 5 && riyadhHour < 12) return 'صباح الخير';
+    if (riyadhHour >= 12 && riyadhHour < 17) return 'مساء الخير';
+    if (riyadhHour >= 17 && riyadhHour < 22) return 'مساء النور';
+    return 'أهلاً بك';
   }
   private delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
