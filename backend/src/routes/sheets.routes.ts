@@ -98,11 +98,8 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
         const district = String(row['الحي'] ?? row['district'] ?? '').trim();
         const cityName = String(row['المدينة'] ?? row['city'] ?? 'بريدة').trim() || 'بريدة';
 
-        const title = String(
-          row['العنوان'] ?? row['title'] ??
-          (rawType && district ? `${rawType} - ${district}` : '') ??
-          ''
-        ).trim();
+        const explicitTitle = String(row['العنوان'] ?? row['title'] ?? '').trim();
+        const title = explicitTitle || (rawType && district ? `${rawType} - ${district}` : rawType);
         if (!title) continue;
 
         const property_type = typeMap[rawType] ?? 'apartment';
@@ -110,9 +107,8 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
         const rawStatus = String(row['الحالة'] ?? row['حالة العقار'] ?? row['status'] ?? 'متاحة').trim();
         const status = statusMap[rawStatus] ?? 'available';
 
-        // Detect listing_type from column names present in row
+        // Detect purpose from column names present in row
         const hasRentCol = 'الإيجار السنوي (ر.س)' in row || 'الإيجار السنوي' in row || 'الإيجار' in row;
-        const listing_type = hasRentCol ? 'rent' : 'sale';
         const purpose = hasRentCol ? 'rent' : 'sale';
 
         const price = parseFloat(String(
@@ -126,9 +122,20 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
 
         const rooms = parseInt(String(row['الغرف'] ?? row['عدد الغرف'] ?? row['rooms'] ?? '0')) || null;
         const bathrooms = parseInt(String(row['الحمامات'] ?? row['bathrooms'] ?? '0')) || null;
-        const floor = String(row['الدور'] ?? row['floor'] ?? '').trim() || null;
+
+        // floor_number is INTEGER — map Arabic ordinals, ignore non-numeric ("أرضي+علوي")
+        const rawFloor = String(row['الدور'] ?? row['floor'] ?? '').trim();
+        const floorMap: Record<string, number> = {
+          'الأرضي': 0, 'أرضي': 0, 'الارضي': 0, 'ارضي': 0,
+          'الأول': 1, 'الاول': 1, 'الثاني': 2, 'الثالث': 3,
+          'الرابع': 4, 'الخامس': 5, 'دور واحد': 1,
+        };
+        const floor_number = floorMap[rawFloor] ?? (parseInt(rawFloor) || null);
+
         const notes = String(row['ملاحظات'] ?? row['الوصف'] ?? row['description'] ?? '').trim();
-        const code = String(row['الكود'] ?? row['رقم العقار'] ?? row['code'] ?? '').trim() || null;
+        // Keep the sheet's floor/district text in the description so nothing is lost
+        const descParts = [notes, rawFloor ? `الدور: ${rawFloor}` : '', district ? `الحي: ${district}` : ''];
+        const description_ar = descParts.filter(Boolean).join(' | ');
 
         // Resolve city
         let cityRow = await db('cities').where('name_ar', 'like', `%${cityName}%`).first();
@@ -145,31 +152,25 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
         }
 
         try {
+          // Only columns present in 001_initial_schema.sql — `code` is omitted so the
+          // trg_property_code trigger generates a unique one (re-imports would collide).
           await db('properties').insert({
-            code,
             title,
             title_ar: title,
-            title_en: title,
-            type: property_type,
             property_type,
-            status,
             purpose,
-            currency: 'SAR',
-            listing_type,
-            price,
-            area,
+            status,
+            city_id: cityRow?.id ?? null,
+            district_id: districtRow?.id ?? null,
             area_sqm: area,
-            bedrooms: rooms,
             rooms,
             bathrooms,
-            floor,
-            city: cityRow?.name_ar ?? cityName,
-            city_id: cityRow?.id ?? null,
-            district: district || null,
-            district_id: districtRow?.id ?? null,
-            description_ar: notes,
-            is_featured: false,
+            floor_number,
+            price,
+            currency: 'SAR',
             negotiable: true,
+            description_ar,
+            is_featured: false,
             inquiry_count: 0,
             view_count: 0,
           });
