@@ -1,15 +1,20 @@
 -- ============================================================================
 -- 002 - Reconcile an existing database with 001_initial_schema.sql
 --
--- Idempotent and safe to re-run: only ADD COLUMN IF NOT EXISTS statements.
--- Existing columns, constraints and data are never touched.
+-- Idempotent and safe to re-run:
+--   * CREATE TABLE IF NOT EXISTS  - only the primary key, for missing tables
+--   * ADD COLUMN IF NOT EXISTS    - fills in every other column
+-- Existing tables, columns and data are never touched.
 --
 -- Enum-typed columns are declared as VARCHAR/TEXT[] so this script never
--- depends on a custom type existing. Columns that already exist keep their
--- original type untouched.
+-- depends on a custom type existing. Uses gen_random_uuid() (built in)
+-- rather than uuid_generate_v4(), which needs the uuid-ossp extension.
 -- Railway query editor friendly: plain statements only, one per line.
 -- ============================================================================
 
+
+-- users
+CREATE TABLE IF NOT EXISTS users (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(20);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(255);
@@ -27,12 +32,18 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS two_factor_secret VARCHAR(255);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS preferences JSONB DEFAULT '{}';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+-- refresh_tokens
+CREATE TABLE IF NOT EXISTS refresh_tokens (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
 ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS user_id UUID;
 ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS token_hash VARCHAR(255);
 ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
 ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS ip_address INET;
 ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS user_agent TEXT;
 ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+
+-- audit_logs
+CREATE TABLE IF NOT EXISTS audit_logs (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
 ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_id UUID;
 ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS action VARCHAR(100);
 ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS entity_type VARCHAR(100);
@@ -42,18 +53,27 @@ ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS new_values JSONB;
 ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS ip_address INET;
 ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_agent TEXT;
 ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+
+-- cities
+CREATE TABLE IF NOT EXISTS cities (id SERIAL PRIMARY KEY);
 ALTER TABLE cities ADD COLUMN IF NOT EXISTS name_ar VARCHAR(100);
 ALTER TABLE cities ADD COLUMN IF NOT EXISTS name_en VARCHAR(100);
 ALTER TABLE cities ADD COLUMN IF NOT EXISTS region_ar VARCHAR(100);
 ALTER TABLE cities ADD COLUMN IF NOT EXISTS region_en VARCHAR(100);
 ALTER TABLE cities ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
 ALTER TABLE cities ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+
+-- districts
+CREATE TABLE IF NOT EXISTS districts (id SERIAL PRIMARY KEY);
 ALTER TABLE districts ADD COLUMN IF NOT EXISTS city_id INTEGER;
 ALTER TABLE districts ADD COLUMN IF NOT EXISTS name_ar VARCHAR(100);
 ALTER TABLE districts ADD COLUMN IF NOT EXISTS name_en VARCHAR(100);
 ALTER TABLE districts ADD COLUMN IF NOT EXISTS direction VARCHAR(20);
 ALTER TABLE districts ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
 ALTER TABLE districts ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+
+-- property_owners
+CREATE TABLE IF NOT EXISTS property_owners (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
 ALTER TABLE property_owners ADD COLUMN IF NOT EXISTS full_name VARCHAR(255);
 ALTER TABLE property_owners ADD COLUMN IF NOT EXISTS phone VARCHAR(20);
 ALTER TABLE property_owners ADD COLUMN IF NOT EXISTS email VARCHAR(255);
@@ -61,6 +81,9 @@ ALTER TABLE property_owners ADD COLUMN IF NOT EXISTS id_number VARCHAR(50);
 ALTER TABLE property_owners ADD COLUMN IF NOT EXISTS notes TEXT;
 ALTER TABLE property_owners ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE property_owners ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+-- properties
+CREATE TABLE IF NOT EXISTS properties (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS code VARCHAR(50);
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS title VARCHAR(500);
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS title_ar VARCHAR(500);
@@ -75,7 +98,7 @@ ALTER TABLE properties ADD COLUMN IF NOT EXISTS address TEXT;
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS google_maps_url VARCHAR(1000);
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS latitude DECIMAL(10, 8);
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS longitude DECIMAL(11, 8);
--- needs PostGIS; app uses latitude/longitude instead:
+-- needs PostGIS (app uses latitude/longitude):
 -- ALTER TABLE properties ADD COLUMN IF NOT EXISTS location_point GEOGRAPHY(POINT, 4326);
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS area_sqm DECIMAL(12, 2);
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS rooms INTEGER;
@@ -106,6 +129,9 @@ ALTER TABLE properties ADD COLUMN IF NOT EXISTS available_from DATE;
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS created_by UUID;
+
+-- property_media
+CREATE TABLE IF NOT EXISTS property_media (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
 ALTER TABLE property_media ADD COLUMN IF NOT EXISTS property_id UUID;
 ALTER TABLE property_media ADD COLUMN IF NOT EXISTS media_type VARCHAR(20);
 ALTER TABLE property_media ADD COLUMN IF NOT EXISTS url VARCHAR(1000);
@@ -116,12 +142,18 @@ ALTER TABLE property_media ADD COLUMN IF NOT EXISTS mime_type VARCHAR(100);
 ALTER TABLE property_media ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
 ALTER TABLE property_media ADD COLUMN IF NOT EXISTS is_main BOOLEAN DEFAULT false;
 ALTER TABLE property_media ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+
+-- property_price_history
+CREATE TABLE IF NOT EXISTS property_price_history (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
 ALTER TABLE property_price_history ADD COLUMN IF NOT EXISTS property_id UUID;
 ALTER TABLE property_price_history ADD COLUMN IF NOT EXISTS old_price DECIMAL(15, 2);
 ALTER TABLE property_price_history ADD COLUMN IF NOT EXISTS new_price DECIMAL(15, 2);
 ALTER TABLE property_price_history ADD COLUMN IF NOT EXISTS change_reason TEXT;
 ALTER TABLE property_price_history ADD COLUMN IF NOT EXISTS changed_by UUID;
 ALTER TABLE property_price_history ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+
+-- clients
+CREATE TABLE IF NOT EXISTS clients (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS full_name VARCHAR(255);
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS phone VARCHAR(20);
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS whatsapp_id VARCHAR(100);
@@ -156,17 +188,26 @@ ALTER TABLE clients ADD COLUMN IF NOT EXISTS first_contact_at TIMESTAMPTZ DEFAUL
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS created_by UUID;
+
+-- client_notes
+CREATE TABLE IF NOT EXISTS client_notes (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
 ALTER TABLE client_notes ADD COLUMN IF NOT EXISTS client_id UUID;
 ALTER TABLE client_notes ADD COLUMN IF NOT EXISTS content TEXT;
 ALTER TABLE client_notes ADD COLUMN IF NOT EXISTS is_private BOOLEAN DEFAULT false;
 ALTER TABLE client_notes ADD COLUMN IF NOT EXISTS created_by UUID;
 ALTER TABLE client_notes ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+
+-- client_property_interests
+CREATE TABLE IF NOT EXISTS client_property_interests (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
 ALTER TABLE client_property_interests ADD COLUMN IF NOT EXISTS client_id UUID;
 ALTER TABLE client_property_interests ADD COLUMN IF NOT EXISTS property_id UUID;
 ALTER TABLE client_property_interests ADD COLUMN IF NOT EXISTS interest_level INTEGER DEFAULT 3;
 ALTER TABLE client_property_interests ADD COLUMN IF NOT EXISTS notes TEXT;
 ALTER TABLE client_property_interests ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE client_property_interests ADD COLUMN IF NOT EXISTS viewed_at TIMESTAMPTZ;
+
+-- conversations
+CREATE TABLE IF NOT EXISTS conversations (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS client_id UUID;
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS whatsapp_chat_id VARCHAR(100);
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS assigned_agent_id UUID;
@@ -177,6 +218,9 @@ ALTER TABLE conversations ADD COLUMN IF NOT EXISTS last_message_at TIMESTAMPTZ;
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS unread_count INTEGER DEFAULT 0;
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+-- messages
+CREATE TABLE IF NOT EXISTS messages (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS conversation_id UUID;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS whatsapp_message_id VARCHAR(255);
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS direction VARCHAR(50);
@@ -206,6 +250,9 @@ ALTER TABLE messages ADD COLUMN IF NOT EXISTS error_message TEXT;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
+
+-- appointments
+CREATE TABLE IF NOT EXISTS appointments (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
 ALTER TABLE appointments ADD COLUMN IF NOT EXISTS client_id UUID;
 ALTER TABLE appointments ADD COLUMN IF NOT EXISTS property_id UUID;
 ALTER TABLE appointments ADD COLUMN IF NOT EXISTS assigned_agent_id UUID;
@@ -222,6 +269,9 @@ ALTER TABLE appointments ADD COLUMN IF NOT EXISTS result TEXT;
 ALTER TABLE appointments ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE appointments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE appointments ADD COLUMN IF NOT EXISTS created_by UUID;
+
+-- deals
+CREATE TABLE IF NOT EXISTS deals (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS deal_number VARCHAR(50);
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS client_id UUID;
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS property_id UUID;
@@ -239,6 +289,9 @@ ALTER TABLE deals ADD COLUMN IF NOT EXISTS notes TEXT;
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS created_by UUID;
+
+-- follow_ups
+CREATE TABLE IF NOT EXISTS follow_ups (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
 ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS client_id UUID;
 ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS follow_up_type VARCHAR(50);
 ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ;
@@ -249,6 +302,9 @@ ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS response_received BOOLEAN DEFAUL
 ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS is_cancelled BOOLEAN DEFAULT false;
 ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS cancel_reason TEXT;
 ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+
+-- notifications
+CREATE TABLE IF NOT EXISTS notifications (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS user_id UUID;
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS notification_type VARCHAR(50);
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS title VARCHAR(255);
@@ -257,6 +313,9 @@ ALTER TABLE notifications ADD COLUMN IF NOT EXISTS data JSONB DEFAULT '{}';
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT false;
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+
+-- daily_stats
+CREATE TABLE IF NOT EXISTS daily_stats (id SERIAL PRIMARY KEY);
 ALTER TABLE daily_stats ADD COLUMN IF NOT EXISTS stat_date DATE;
 ALTER TABLE daily_stats ADD COLUMN IF NOT EXISTS new_clients INTEGER DEFAULT 0;
 ALTER TABLE daily_stats ADD COLUMN IF NOT EXISTS total_messages INTEGER DEFAULT 0;
@@ -269,6 +328,9 @@ ALTER TABLE daily_stats ADD COLUMN IF NOT EXISTS deals_closed INTEGER DEFAULT 0;
 ALTER TABLE daily_stats ADD COLUMN IF NOT EXISTS total_revenue DECIMAL(15, 2) DEFAULT 0;
 ALTER TABLE daily_stats ADD COLUMN IF NOT EXISTS ai_cost_usd DECIMAL(10, 4) DEFAULT 0;
 ALTER TABLE daily_stats ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+
+-- system_settings
+CREATE TABLE IF NOT EXISTS system_settings (key VARCHAR(100) PRIMARY KEY);
 ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS key VARCHAR(100);
 ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS value JSONB;
 ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS description TEXT;
