@@ -1,105 +1,21 @@
 -- ============================================================================
 -- 002 â€” Reconcile an existing database with 001_initial_schema.sql
--- Safe & idempotent: creates missing enum types, then adds any missing column.
--- Existing tables, columns and data are left untouched.
+--
+-- Idempotent and safe to re-run: only ADD COLUMN IF NOT EXISTS statements.
+-- Existing columns, constraints and data are never touched.
+--
+-- Enum-typed columns are declared as VARCHAR/TEXT[] on purpose so this script
+-- never depends on a custom type existing. Columns that already exist (with
+-- their original enum type) are skipped untouched.
+-- Written for the Railway query editor: plain statements only, one per line.
 -- ============================================================================
 
--- ---------- Enum types (ignored if they already exist) ----------
-DO $$ BEGIN
-  CREATE TYPE property_type AS ENUM (
-  'land', 'apartment', 'villa', 'building', 'office',
-  'showroom', 'warehouse', 'farm', 'investment_project', 'other'
-);
-
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-
-DO $$ BEGIN
-  CREATE TYPE property_status AS ENUM (
-  'available', 'reserved', 'sold', 'rented', 'under_maintenance',
-  'coming_soon', 'hidden'
-);
-
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-
-DO $$ BEGIN
-  CREATE TYPE client_status AS ENUM (
-  'new', 'contacted', 'interested', 'viewing_scheduled',
-  'negotiating', 'contract_pending', 'closed_won', 'closed_lost',
-  'on_hold', 'follow_up'
-);
-
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-
-DO $$ BEGIN
-  CREATE TYPE message_type AS ENUM (
-  'text', 'image', 'video', 'audio', 'document',
-  'location', 'sticker', 'reaction', 'system'
-);
-
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-
-DO $$ BEGIN
-  CREATE TYPE message_status AS ENUM (
-  'pending', 'sent', 'delivered', 'read', 'failed'
-);
-
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-
-DO $$ BEGIN
-  CREATE TYPE user_role AS ENUM (
-  'super_admin', 'admin', 'sales_manager', 'sales_agent',
-  'marketer', 'customer_service', 'viewer'
-);
-
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-
-DO $$ BEGIN
-  CREATE TYPE appointment_status AS ENUM (
-  'scheduled', 'confirmed', 'completed', 'cancelled', 'no_show'
-);
-
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-
-DO $$ BEGIN
-  CREATE TYPE contract_status AS ENUM (
-  'draft', 'pending_signature', 'signed', 'active', 'completed',
-  'cancelled', 'disputed'
-);
-
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-
-DO $$ BEGIN
-  CREATE TYPE follow_up_type AS ENUM (
-  'auto_1day', 'auto_3days', 'auto_1week', 'auto_1month', 'manual'
-);
-
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-
-DO $$ BEGIN
-  CREATE TYPE notification_type AS ENUM (
-  'new_client', 'new_message', 'appointment_reminder', 'follow_up',
-  'deal_closed', 'system_alert', 'report_ready'
-);
-
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-
--- ---------- Missing columns ----------
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(20);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(255);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name_ar VARCHAR(255);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
-ALTER TABLE users ADD COLUMN IF NOT EXISTS role user_role DEFAULT 'viewer';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(50) DEFAULT 'viewer';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp_number VARCHAR(20);
@@ -150,9 +66,9 @@ ALTER TABLE properties ADD COLUMN IF NOT EXISTS title VARCHAR(500);
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS title_ar VARCHAR(500);
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS description TEXT;
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS description_ar TEXT;
-ALTER TABLE properties ADD COLUMN IF NOT EXISTS property_type property_type;
-ALTER TABLE properties ADD COLUMN IF NOT EXISTS purpose property_purpose DEFAULT 'sale';
-ALTER TABLE properties ADD COLUMN IF NOT EXISTS status property_status DEFAULT 'available';
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS VARCHAR(50) VARCHAR(50);
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS purpose VARCHAR(50) DEFAULT 'sale';
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'available';
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS city_id INTEGER;
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS district_id INTEGER;
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS address TEXT;
@@ -214,17 +130,17 @@ ALTER TABLE clients ADD COLUMN IF NOT EXISTS nationality VARCHAR(100) DEFAULT 'Ø
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS city_id INTEGER;
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS district VARCHAR(100);
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS address TEXT;
-ALTER TABLE clients ADD COLUMN IF NOT EXISTS preferred_property_types property_type[];
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS preferred_property_types TEXT[];
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS preferred_cities INTEGER[];
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS preferred_districts INTEGER[];
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS budget_min DECIMAL(15, 2);
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS budget_max DECIMAL(15, 2);
-ALTER TABLE clients ADD COLUMN IF NOT EXISTS purpose property_purpose;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS purpose VARCHAR(50);
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS area_min DECIMAL(12, 2);
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS area_max DECIMAL(12, 2);
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS rooms_needed INTEGER;
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS special_requirements TEXT;
-ALTER TABLE clients ADD COLUMN IF NOT EXISTS status client_status DEFAULT 'new';
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'new';
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS source VARCHAR(100) DEFAULT 'whatsapp';
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS assigned_agent_id UUID;
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS last_contact_at TIMESTAMPTZ;
@@ -262,9 +178,9 @@ ALTER TABLE conversations ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAUL
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS conversation_id UUID;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS whatsapp_message_id VARCHAR(255);
-ALTER TABLE messages ADD COLUMN IF NOT EXISTS direction message_direction;
-ALTER TABLE messages ADD COLUMN IF NOT EXISTS message_type message_type DEFAULT 'text';
-ALTER TABLE messages ADD COLUMN IF NOT EXISTS status message_status DEFAULT 'pending';
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS direction VARCHAR(50);
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS VARCHAR(50) VARCHAR(50) DEFAULT 'text';
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'pending';
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS content TEXT;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS caption TEXT;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_url VARCHAR(1000);
@@ -294,7 +210,7 @@ ALTER TABLE appointments ADD COLUMN IF NOT EXISTS property_id UUID;
 ALTER TABLE appointments ADD COLUMN IF NOT EXISTS assigned_agent_id UUID;
 ALTER TABLE appointments ADD COLUMN IF NOT EXISTS title VARCHAR(255);
 ALTER TABLE appointments ADD COLUMN IF NOT EXISTS description TEXT;
-ALTER TABLE appointments ADD COLUMN IF NOT EXISTS status appointment_status DEFAULT 'scheduled';
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'scheduled';
 ALTER TABLE appointments ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ;
 ALTER TABLE appointments ADD COLUMN IF NOT EXISTS duration_minutes INTEGER DEFAULT 60;
 ALTER TABLE appointments ADD COLUMN IF NOT EXISTS location TEXT;
@@ -309,7 +225,7 @@ ALTER TABLE deals ADD COLUMN IF NOT EXISTS deal_number VARCHAR(50);
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS client_id UUID;
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS property_id UUID;
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS assigned_agent_id UUID;
-ALTER TABLE deals ADD COLUMN IF NOT EXISTS status contract_status DEFAULT 'draft';
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'draft';
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS agreed_price DECIMAL(15, 2);
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS commission_percentage DECIMAL(5, 2);
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS commission_amount DECIMAL(12, 2);
@@ -323,7 +239,7 @@ ALTER TABLE deals ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS created_by UUID;
 ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS client_id UUID;
-ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS follow_up_type follow_up_type;
+ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS VARCHAR(50) VARCHAR(50);
 ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ;
 ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ;
 ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'pending';
@@ -333,7 +249,7 @@ ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS is_cancelled BOOLEAN DEFAULT fal
 ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS cancel_reason TEXT;
 ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS user_id UUID;
-ALTER TABLE notifications ADD COLUMN IF NOT EXISTS notification_type notification_type;
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS VARCHAR(50) VARCHAR(50);
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS title VARCHAR(255);
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS body TEXT;
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS data JSONB DEFAULT '{}';
@@ -358,5 +274,5 @@ ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS description TEXT;
 ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS updated_by UUID;
 ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
--- ---------- Index needed for message de-duplication ----------
+-- Index used for WhatsApp message de-duplication
 CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_wa_msg_id ON messages(whatsapp_message_id);
