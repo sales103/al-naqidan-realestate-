@@ -643,8 +643,78 @@ export class ConversationService {
 
       logger.info('AI processed', { clientId: client.id, intent: aiResult.intent.primary, props: properties.length, ms: Date.now() - startTime });
     } catch (error: any) {
-      logger.error('AI pipeline failed', { clientId: client.id, error: error?.message });
-      await whatsappService.sendText(client.phone, 'عذراً، حدث خطأ مؤقت. سيتواصل معك أحد مستشارينا قريباً. 🙏', this.waInstance(conversation));
+      logger.error('AI pipeline failed', {
+        clientId: client.id,
+        message: error?.message,
+        status: error?.status ?? error?.response?.status,
+        code: error?.code,
+        body: error?.response?.data ? JSON.stringify(error.response.data).slice(0, 300) : undefined,
+      });
+      // The guided flow already captured type, city and budget, so we can still
+      // search and answer without the AI.
+      await this.searchWithoutAI(client, conversation, ctx);
+    }
+  }
+
+  /**
+   * Direct property search from the flow context — used when the AI call fails,
+   * so an AI outage never leaves the customer with just an error message.
+   */
+  private async searchWithoutAI(client: Client, conversation: Conversation, ctx: FlowContext): Promise<void> {
+    try {
+      const params: any = { status: 'available', limit: 3, sort_by: 'featured' };
+
+      const typeInfo = PROPERTY_TYPE_MAP[ctx.property_type ?? ''];
+      if (typeInfo?.db_types?.[0]) params.property_type = typeInfo.db_types[0];
+      if (ctx.budget) params.price_max = ctx.budget;
+      if (ctx.purpose) params.purpose = ctx.purpose === 'rent' ? 'rent' : 'sale';
+
+      if (ctx.location) {
+        const cityId = await propertyService.resolveCityId(ctx.location);
+        if (cityId) params.city_ids = [cityId];
+        else {
+          const distId = await propertyService.resolveDistrictId(ctx.location);
+          if (distId) params.district_ids = [distId];
+        }
+      }
+
+      let { properties } = await propertyService.search(params);
+
+      // Widen the search rather than come back empty-handed.
+      if (properties.length === 0 && params.property_type) {
+        ({ properties } = await propertyService.search({ ...params, property_type: undefined }));
+      }
+      if (properties.length === 0 && params.price_max) {
+        ({ properties } = await propertyService.search({ ...params, price_max: params.price_max * 1.3 }));
+      }
+
+      if (properties.length > 0) {
+        await whatsappService.sendProperties(
+          client.phone, properties, this.buildSearchSummary(ctx, {}), this.waInstance(conversation),
+        );
+        await sleep(400);
+        await whatsappService.sendText(
+          client.phone,
+          'هل تود ترتيب *موعد معاينة* لأي منها؟ اكتب رقم العقار أو اسأل عن أي تفاصيل 🏠',
+          this.waInstance(conversation),
+        );
+        return;
+      }
+
+      await whatsappService.sendText(
+        client.phone,
+        'لم أجد حالياً عقاراً مطابقاً لطلبك تماماً 🔍\n\nسجّلت طلبك وسيتواصل معك أحد مستشارينا بأقرب الخيارات المتاحة.\n\n' + this.handoffNote(),
+        this.waInstance(conversation),
+      );
+      await this.db('conversations').where('id', conversation.id).update({ ai_handoff_requested: true, updated_at: new Date() });
+      await this.notifyAgent(client, conversation, 'تعذّر الرد الآلي — يحتاج متابعة بشرية');
+    } catch (e: any) {
+      logger.error('searchWithoutAI failed', { clientId: client.id, error: e?.message });
+      await whatsappService.sendText(
+        client.phone,
+        'شكراً لتواصلك 🙏\nسيتواصل معك أحد مستشارينا لمساعدتك.\n\n' + this.handoffNote(),
+        this.waInstance(conversation),
+      );
     }
   }
 
