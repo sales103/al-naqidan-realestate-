@@ -251,6 +251,17 @@ export class ConversationService {
     payload: WhatsAppWebhookPayload, isNew: boolean,
   ): Promise<void> {
     const ctx = await this.getFlowContext(conversation.id);
+
+    // "ابدأ من جديد" resets the whole flow instead of being parsed as a request.
+    const RESTART = ['من الصفر', 'من البدايه', 'من البداية', 'ابدا من جديد', 'ابدأ من جديد', 'نبدا من جديد', 'رجعني', 'الغي', 'إلغاء', 'restart', 'reset'];
+    const normText = normalizeAr((message.content ?? ''));
+    if (normText && RESTART.some(w => normText.includes(normalizeAr(w)))) {
+      await this.saveFlowContext(conversation.id, { state: 'welcome' });
+      await whatsappService.sendText(client.phone, 'تمام، نبدأ من جديد 👌', this.waInstance(conversation));
+      await sleep(400);
+      await this.stepWelcome(client, conversation, { state: 'welcome' });
+      return;
+    }
     const clickedId = this.extractButtonId(payload);
     const text = (message.content ?? '').trim();
 
@@ -656,9 +667,6 @@ export class ConversationService {
 
       if (properties.length > 0) {
         await whatsappService.sendProperties(client.phone, properties, searchSummary, this.waInstance(conversation));
-      } else if (ctx.state === 'ai' && preloadedProperties.length === 0 && aiResult.intent.primary === 'search_property') {
-        await sleep(500);
-        await whatsappService.sendText(client.phone, '📋 لم نجد حالياً عقارات مطابقة لطلبك — سيتواصل معك أحد مستشارينا قريباً لمساعدتك. 🤝', this.waInstance(conversation));
       }
 
       if (['new', 'contacted', 'interested'].includes(client.status)) {
