@@ -181,6 +181,8 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
 
         const rooms = parseInt(String(row['الغرف'] ?? row['عدد الغرف'] ?? row['rooms'] ?? '0')) || null;
         const bathrooms = parseInt(String(row['الحمامات'] ?? row['bathrooms'] ?? '0')) || null;
+        const kitchens = parseInt(String(row['المطبخ'] ?? row['عدد المطابخ'] ?? row['kitchens'] ?? '0')) || null;
+        const living_rooms = parseInt(String(row['الصالة'] ?? row['عدد الصالات'] ?? row['living_rooms'] ?? '0')) || null;
 
         // floor_number is INTEGER — map Arabic ordinals, ignore non-numeric ("أرضي+علوي")
         const rawFloor = String(row['الدور'] ?? row['floor'] ?? '').trim();
@@ -238,6 +240,8 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
           rooms,
           bedrooms: rooms,
           bathrooms,
+          kitchens,
+          living_rooms,
           floor_number,
           price,
           currency: 'SAR',

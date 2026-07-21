@@ -29,7 +29,7 @@ const statusConfig: Record<string, { label: string; color: string; dot: string }
 
 const emptyForm = {
   title: '', property_type: 'apartment', purpose: 'sale', status: 'available',
-  price: '', area_sqm: '', rooms: '', bathrooms: '', address: '', description_ar: '',
+  price: '', area_sqm: '', rooms: '', bathrooms: '', kitchens: '', living_rooms: '', address: '', description_ar: '',
   is_featured: false, negotiable: true,
   main_image_url: '', extra_images: [] as string[],
 };
@@ -47,6 +47,8 @@ function PropertyModal({ property, onClose }: { property?: any; onClose: () => v
     area_sqm:       property.area_sqm ?? '',
     rooms:          property.rooms ?? '',
     bathrooms:      property.bathrooms ?? '',
+    kitchens:       property.kitchens ?? '',
+    living_rooms:   property.living_rooms ?? '',
     address:        property.address ?? '',
     description_ar: property.description_ar ?? '',
     is_featured:    property.is_featured ?? false,
@@ -116,8 +118,10 @@ function PropertyModal({ property, onClose }: { property?: any; onClose: () => v
       status: form.status,
       price:     parseFloat(String(form.price))    || undefined,
       area_sqm:  parseFloat(String(form.area_sqm)) || undefined,
-      rooms:     parseInt(String(form.rooms))       || undefined,
-      bathrooms: parseInt(String(form.bathrooms))   || undefined,
+      rooms:        parseInt(String(form.rooms))        || undefined,
+      bathrooms:    parseInt(String(form.bathrooms))    || undefined,
+      kitchens:     parseInt(String(form.kitchens))     || undefined,
+      living_rooms: parseInt(String(form.living_rooms)) || undefined,
       address:        form.address        || undefined,
       description_ar: form.description_ar || undefined,
       is_featured: form.is_featured,
@@ -279,6 +283,19 @@ function PropertyModal({ property, onClose }: { property?: any; onClose: () => v
                   onChange={(e) => set('status', e.target.value)}>
                   {Object.entries(statusConfig).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                 </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">المطبخ</label>
+                <input className="input w-full" type="number" min="0" value={form.kitchens}
+                  onChange={(e) => set('kitchens', e.target.value)} placeholder="0" />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">الصالة</label>
+                <input className="input w-full" type="number" min="0" value={form.living_rooms}
+                  onChange={(e) => set('living_rooms', e.target.value)} placeholder="0" />
               </div>
             </div>
 

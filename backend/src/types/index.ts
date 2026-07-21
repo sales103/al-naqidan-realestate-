@@ -64,6 +64,8 @@ export interface Property {
   area_sqm?: number;
   rooms?: number;
   bathrooms?: number;
+  kitchens?: number;
+  living_rooms?: number;
   floor_number?: number;
   total_floors?: number;
   parking_spaces?: number;

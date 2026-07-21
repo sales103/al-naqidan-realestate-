@@ -37,6 +37,8 @@ const createSchema = z.object({
   area_sqm: z.number().positive().optional(),
   rooms: z.number().int().min(0).optional(),
   bathrooms: z.number().int().min(0).optional(),
+  kitchens: z.number().int().min(0).optional(),
+  living_rooms: z.number().int().min(0).optional(),
   floor_number: z.number().int().optional(),
   total_floors: z.number().int().optional(),
   parking_spaces: z.number().int().min(0).optional(),

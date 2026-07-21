@@ -52,6 +52,8 @@ interface FlowContext {
   pending?: FlowOption[];
   /** Property ids already sent to this client, so a later search never repeats them. */
   shown_property_ids?: string[];
+  /** Ordered ids from the most recent batch actually sent — "قارن 1 و3" resolves against this. */
+  last_shown_properties?: string[];
   /** Complaint mode: the bot stays here until a human takes over. */
   complaint?: {
     level: AngerLevel;
@@ -281,6 +283,17 @@ export class ConversationService {
     }
     const clickedId = this.extractButtonId(payload);
     const text = (message.content ?? '').trim();
+
+    // "قارن 1 و3" against the last batch actually sent — checked before the
+    // state machine so it works no matter which step the conversation is on.
+    // 'قارن' as a substring also matches 'مقارنة' / 'المقارنة' after normalization.
+    const COMPARE_WORDS = ['قارن', 'compare'];
+    const normCompare = normalizeAr(message.content ?? '');
+    if (normCompare && (ctx.last_shown_properties?.length ?? 0) >= 2 &&
+        COMPARE_WORDS.some(w => normCompare.includes(normalizeAr(w)))) {
+      await this.handleCompare(message, client, conversation, ctx);
+      return;
+    }
 
     // A complaint outranks every other flow: switch modes and stay there.
     const signal = detectComplaint(message.content ?? '');
@@ -742,7 +755,11 @@ export class ConversationService {
             logger.warn('interest tracking skipped', { error: e?.message });
           }
         }
-        latestCtx = { ...ctx, shown_property_ids: [...shownIds, ...properties.map((p) => p.id)] };
+        latestCtx = {
+          ...ctx,
+          shown_property_ids: [...shownIds, ...properties.map((p) => p.id)],
+          last_shown_properties: properties.map((p) => p.id),
+        };
         await this.saveFlowContext(conversation.id, latestCtx);
       }
 
@@ -825,6 +842,7 @@ export class ConversationService {
         await this.saveFlowContext(conversation.id, {
           ...ctx,
           shown_property_ids: [...shownIds, ...properties.map((p) => p.id)],
+          last_shown_properties: properties.map((p) => p.id),
         });
         await sleep(400);
         await whatsappService.sendText(
@@ -963,6 +981,72 @@ export class ConversationService {
     const budget = ctx.budget ?? extracted.budget_max;
     if (budget) parts.push(`بميزانية ${budget >= 1_000_000 ? (budget/1_000_000).toFixed(1)+' مليون' : (budget/1_000).toFixed(0)+' ألف'} ريال`);
     return parts.join(' ') || 'طلبك';
+  }
+
+  // ===========================================================================
+  // Property comparison — "قارن 1 و3" against the last batch actually sent
+  // ===========================================================================
+
+  private async handleCompare(
+    message: Message, client: Client, conversation: Conversation, ctx: FlowContext,
+  ): Promise<void> {
+    const inst = this.waInstance(conversation);
+    const shown = ctx.last_shown_properties ?? [];
+
+    const norm = normalizeAr(message.content ?? '');
+    const numbers = [...new Set([...norm.matchAll(/\d+/g)].map((m) => parseInt(m[0], 10)))];
+    const picks = numbers.filter((n) => n >= 1 && n <= shown.length);
+
+    if (picks.length < 2) {
+      await whatsappService.sendText(
+        client.phone,
+        `اكتب أرقام العقارات اللي تبي تقارن بينها من آخر قائمة أرسلتها لك، مثل: قارن 1 و3 (من 1 إلى ${shown.length}).`,
+        inst,
+      );
+      return;
+    }
+
+    const capped = picks.slice(0, 5);
+    const properties = await Promise.all(capped.map((n) => propertyService.findById(shown[n - 1]!)));
+    const pairs = capped
+      .map((n, i) => ({ n, p: properties[i] }))
+      .filter((x): x is { n: number; p: NonNullable<typeof x.p> } => Boolean(x.p));
+
+    if (pairs.length < 2) {
+      await whatsappService.sendText(
+        client.phone,
+        'تعذر إيجاد بعض العقارات المطلوبة للمقارنة، جرّب أرقاماً من آخر قائمة أرسلتها لك.',
+        inst,
+      );
+      return;
+    }
+
+    await whatsappService.sendText(client.phone, this.buildComparisonMessage(pairs), inst);
+  }
+
+  private buildComparisonMessage(pairs: { n: number; p: any }[]): string {
+    const typeAr: Record<string, string> = {
+      land: 'أرض', apartment: 'شقة', villa: 'فيلا', building: 'عمارة', office: 'مكتب',
+      showroom: 'معرض', warehouse: 'مستودع', farm: 'مزرعة', investment_project: 'مشروع استثماري', other: 'عقار',
+    };
+    const fields: [string, (p: any) => string][] = [
+      ['النوع', (p) => typeAr[p.property_type] ?? 'عقار'],
+      ['الغرض', (p) => (p.purpose === 'rent' ? 'إيجار' : 'بيع')],
+      ['السعر', (p) => (p.price ? `${Number(p.price).toLocaleString('en-US')} ريال` : '—')],
+      ['الغرف', (p) => (p.rooms ? String(p.rooms) : '—')],
+      ['الحمامات', (p) => (p.bathrooms ? String(p.bathrooms) : '—')],
+      ['المطبخ', (p) => (p.kitchens ? String(p.kitchens) : '—')],
+      ['الصالة', (p) => (p.living_rooms ? String(p.living_rooms) : '—')],
+      ['الموقع', (p) => [p.district_name, p.city_name].filter(Boolean).join(' - ') || '—'],
+      ['الكود', (p) => p.code ?? '—'],
+    ];
+
+    const blocks = fields.map(([label, get]) => {
+      const lines = pairs.map(({ n, p }) => `${n}) ${get(p)}`).join('\n');
+      return `*${label}*\n${lines}`;
+    });
+
+    return `مقارنة بين العقارات:\n\n${blocks.join('\n\n')}`;
   }
 
   private async scheduleFollowUps(clientId: string): Promise<void> {

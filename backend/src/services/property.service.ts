@@ -16,6 +16,23 @@ import crypto from 'crypto';
 export class PropertyService {
   private get db() { return getDatabase(); }
 
+  // The live database has repeatedly drifted from the migration files (columns
+  // added by hand, or a migration written but not yet run — see kitchens/
+  // living_rooms). Writing an unknown column raises 42703 and aborts the whole
+  // request, so filter the payload down to columns that actually exist first.
+  private async existingColumns(): Promise<Set<string>> {
+    const rows = await this.db('information_schema.columns')
+      .select('column_name')
+      .where('table_name', 'properties')
+      .andWhere('table_schema', this.db.raw('current_schema()'));
+    return new Set(rows.map((r: any) => r.column_name));
+  }
+
+  private async filterToExistingColumns<T extends Record<string, any>>(data: T): Promise<Partial<T>> {
+    const cols = await this.existingColumns();
+    return Object.fromEntries(Object.entries(data).filter(([k]) => cols.has(k))) as Partial<T>;
+  }
+
   async search(params: PropertySearchParams): Promise<PropertySearchResult> {
     const cacheKey = cacheKeys.propertySearch(
       crypto.createHash('md5').update(JSON.stringify(params)).digest('hex')
@@ -141,16 +158,18 @@ export class PropertyService {
   }
 
   async create(data: Omit<Property, 'id' | 'code' | 'created_at' | 'updated_at' | 'view_count' | 'inquiry_count'>): Promise<Property> {
-    const [property] = await this.db('properties').insert(data).returning('*') as Property[];
+    const payload = await this.filterToExistingColumns(data);
+    const [property] = await this.db('properties').insert(payload).returning('*') as Property[];
     if (!property) throw new Error('Failed to create property');
     await cacheDel(cacheKeys.dashboardStats());
     return property;
   }
 
   async update(id: string, data: Partial<Property>): Promise<Property> {
+    const payload = await this.filterToExistingColumns({ ...data, updated_at: new Date() });
     const [property] = await this.db('properties')
       .where('id', id)
-      .update({ ...data, updated_at: new Date() })
+      .update(payload)
       .returning('*') as Property[];
     if (!property) throw new Error('Property not found');
     await cacheDel(cacheKeys.propertyDetail(id));
