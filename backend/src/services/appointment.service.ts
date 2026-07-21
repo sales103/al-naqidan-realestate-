@@ -20,7 +20,7 @@ export class AppointmentService {
     const client = await this.db('clients').where('id', data.client_id).first();
     if (client) {
       const dateStr = format(new Date(data.scheduled_at), "EEEE d MMMM yyyy 'الساعة' HH:mm", { locale: ar });
-      const msg = `*تأكيد موعدك*\n\nأهلاً ${client.full_name}،\nتم تحديد موعدك:\n${data.title}\n${dateStr}\n${data.location ? data.location + '\n' : ''}نتطلع للقائك.\n\nشركة النقيدان للاستثمارات العقارية`;
+      const msg = `*تأكيد موعدك*\n\nأهلاً ${client.full_name}،\nتم تحديد موعدك:\n${data.title}\n${dateStr}\n${data.location ? data.location + '\n' : ''}نتطلع للقائك.\n\nمكتب عبدالحكيم النقيدان العقاري`;
       await whatsappService.sendText(client.phone, msg).catch((err) =>
         logger.warn('Failed to notify client of appointment', { err })
       );

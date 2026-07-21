@@ -189,7 +189,7 @@ export class WhatsAppService {
           number: to,
           title,
           description: body,
-          footer: 'مكتب النقيدان العقاري',
+          footer: 'مكتب عبدالحكيم النقيدان العقاري',
           buttons: buttons.map(b => ({
             buttonId: b.id,
             buttonText: { displayText: b.text },
@@ -223,7 +223,7 @@ export class WhatsAppService {
         title,
         description: body,
         buttonText,
-        footerText: 'مكتب النقيدان العقاري',
+        footerText: 'مكتب عبدالحكيم النقيدان العقاري',
         sections: [{
           title: 'الخيارات',
           rows: rows.map(r => ({

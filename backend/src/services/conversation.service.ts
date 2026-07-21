@@ -33,7 +33,7 @@ function recordError(where: string, e: any): void {
 // welcome → purpose → type → entry → location → budget → ai → escalated
 // =============================================================================
 
-type FlowState = 'welcome' | 'category' | 'type' | 'entry' | 'purpose' | 'budget' | 'ai' | 'complaint' | 'escalated';
+type FlowState = 'welcome' | 'category' | 'type' | 'entry' | 'purpose' | 'ai' | 'complaint' | 'escalated';
 
 /** One selectable option. `keywords` let the customer answer in their own words. */
 interface FlowOption {
@@ -48,6 +48,8 @@ interface FlowContext {
   property_type?: string;
   location?: string;
   budget?: number;
+  /** Which type the entry-type question (private/shared) was asked for. */
+  entry_for?: 'house' | 'apt_family';
   /** Options last offered, so a bare "2" can be resolved back to its option. */
   pending?: FlowOption[];
   /** Property ids already sent to this client, so a later search never repeats them. */
@@ -64,7 +66,9 @@ interface FlowContext {
 }
 
 const PROPERTY_TYPE_MAP: Record<string, { db_types: string[]; label: string }> = {
-  apartment_family: { db_types: ['apartment', 'villa'], label: 'شقة عوائل' },
+  apartment_family:         { db_types: ['apartment', 'villa'], label: 'شقة عوائل' },
+  apartment_family_private: { db_types: ['apartment', 'villa'], label: 'شقة عوائل مدخل خاص' },
+  apartment_family_shared:  { db_types: ['apartment', 'villa'], label: 'شقة عوائل مدخل مشترك' },
   apartment_single: { db_types: ['apartment'],          label: 'شقة عزاب' },
   house_private:    { db_types: ['villa'],              label: 'بيت مدخل خاص' },
   house_shared:     { db_types: ['villa'],              label: 'بيت مدخل مشترك' },
@@ -136,8 +140,6 @@ function extractBudget(text: string, purpose?: 'rent' | 'buy'): number | undefin
 /** Rotate wording so the bot never repeats itself two steps in a row. */
 const ACKS = ['أبشر', 'الله يعطيك العافية', 'يسعدني خدمتك', 'بكل سرور', 'تمام', 'ممتاز'];
 const ack = (): string => ACKS[Math.floor(Math.random() * ACKS.length)]!;
-
-const OPEN_BUDGET = ['مفتوح', 'مو محدد', 'ما عندي', 'حسب', 'اي شي', 'مافي', 'غير محدد'];
 
 export class ConversationService {
   private get db() { return getDatabase(); }
@@ -278,7 +280,7 @@ export class ConversationService {
       await this.saveFlowContext(conversation.id, { state: 'welcome' });
       await whatsappService.sendText(client.phone, 'تمام، نبدأ من جديد', this.waInstance(conversation));
       await sleep(400);
-      await this.stepWelcome(client, conversation, { state: 'welcome' });
+      await this.stepWelcome(client, conversation, { state: 'welcome' }, true);
       return;
     }
     const clickedId = this.extractButtonId(payload);
@@ -302,13 +304,12 @@ export class ConversationService {
       return;
     }
 
-    if (isNew || ctx.state === 'welcome') { await this.stepWelcome(client, conversation, ctx); return; }
+    if (isNew || ctx.state === 'welcome') { await this.stepWelcome(client, conversation, ctx, isNew); return; }
     if (ctx.state === 'ai' || ctx.state === 'escalated') { await this.processWithAI(message, client, conversation, ctx, payload); return; }
     if (ctx.state === 'category') { await this.stepCategory(clickedId, text, client, conversation, ctx); return; }
     if (ctx.state === 'type') { await this.stepType(clickedId, text, client, conversation, ctx); return; }
     if (ctx.state === 'entry') { await this.stepEntry(clickedId, text, client, conversation, ctx); return; }
-    if (ctx.state === 'purpose') { await this.stepPurpose(clickedId, text, client, conversation, ctx); return; }
-    if (ctx.state === 'budget') { await this.stepBudget(text, client, conversation, ctx, message); return; }
+    if (ctx.state === 'purpose') { await this.stepPurpose(clickedId, text, client, conversation, ctx, message); return; }
   }
 
   // ===========================================================================
@@ -456,13 +457,44 @@ export class ConversationService {
   // Step 1 — Welcome
   // ===========================================================================
 
-  private async stepWelcome(client: Client, conversation: Conversation, ctx: FlowContext): Promise<void> {
-    await whatsappService.sendText(
-      client.phone,
-      `حياك الله\nمعك مساعد *مكتب عبدالحكيم النقيدان العقارية*.`,
-      this.waInstance(conversation),
-    );
-    await sleep(500);
+  private async stepWelcome(
+    client: Client, conversation: Conversation, ctx: FlowContext, isNew: boolean,
+  ): Promise<void> {
+    const returning = !isNew && Boolean((client as any).status) && (client as any).status !== 'new';
+
+    if (returning) {
+      const typeAr: Record<string, string> = {
+        land: 'أرض', apartment: 'شقة', villa: 'فيلا', building: 'عمارة', office: 'مكتب',
+        showroom: 'محل أو صالة تجارية', warehouse: 'مستودع', farm: 'مزرعة',
+      };
+      const lastTypes: string[] = (client as any).preferred_property_types ?? [];
+      const lastLabel = lastTypes.map((t) => typeAr[t]).filter(Boolean)[0];
+      const lastPurpose = (client as any).purpose === 'rent' ? 'إيجار' : (client as any).purpose === 'sale' ? 'شراء' : undefined;
+      const lastBudget = (client as any).budget_max as number | undefined;
+      const budgetStr = lastBudget
+        ? lastBudget >= 1_000_000 ? `${(lastBudget / 1_000_000).toFixed(1)} مليون ريال` : `${Math.round(lastBudget / 1_000)} ألف ريال`
+        : undefined;
+
+      const parts = [lastLabel, lastPurpose ? `لل${lastPurpose}` : undefined, budgetStr ? `بميزانية ${budgetStr}` : undefined].filter(Boolean);
+      const lastRequest = parts.join(' ');
+
+      await whatsappService.sendText(
+        client.phone,
+        lastRequest
+          ? `أهلاً بعودتك${client.full_name ? ' ' + client.full_name : ''}.\nآخر مرة كنت تدور على ${lastRequest} — نفس الطلب، أو تغيّر شيء؟`
+          : `أهلاً بعودتك${client.full_name ? ' ' + client.full_name : ''}.\nكيف أقدر أساعدك اليوم؟`,
+        this.waInstance(conversation),
+      );
+      await sleep(500);
+    } else {
+      await whatsappService.sendText(
+        client.phone,
+        `حياك الله\nمعك مساعد *مكتب عبدالحكيم النقيدان العقاري*.`,
+        this.waInstance(conversation),
+      );
+      await sleep(500);
+    }
+
     await this.askOptions(client, conversation, ctx, 'category', 'نوع العقار', 'تبحث عن عقار سكني أم تجاري؟', [
       { id: 'cat_residential', title: 'سكني', keywords: ['سكني', 'سكن', 'شقه', 'شقة', 'بيت', 'فيلا', 'عوايل', 'عزاب'] },
       { id: 'cat_commercial',  title: 'تجاري', keywords: ['تجاري', 'محل', 'صاله', 'معرض', 'مكتب', 'مستودع'] },
@@ -514,16 +546,16 @@ export class ConversationService {
     const choice = this.resolveChoice(clickedId, text, ctx);
     if (!choice) { await this.reAsk(client, conversation, ctx); return; }
 
-    if (choice === 'type_house') {
+    if (choice === 'type_house' || choice === 'type_apt_family') {
+      const entry_for: 'house' | 'apt_family' = choice === 'type_house' ? 'house' : 'apt_family';
       await this.askOptions(client, conversation, ctx, 'entry', 'نوع المدخل', 'ما نوع المدخل المطلوب؟', [
         { id: 'entry_private', title: 'مدخل خاص',   keywords: ['خاص', 'مستقل', 'منفصل'] },
         { id: 'entry_shared',  title: 'مدخل مشترك', keywords: ['مشترك', 'عام'] },
-      ]);
+      ], { entry_for });
       return;
     }
 
     const map: Record<string, string> = {
-      type_apt_family: 'apartment_family',
       type_apt_single: 'apartment_single',
       type_land: 'land',
       com_shop: 'shop', com_hall: 'hall', com_office: 'office', com_storage: 'warehouse',
@@ -535,7 +567,7 @@ export class ConversationService {
   }
 
   // ===========================================================================
-  // Step 3b — House entry type
+  // Step 3b — Entry type (house, or family apartment)
   // ===========================================================================
 
   private async stepEntry(
@@ -543,11 +575,13 @@ export class ConversationService {
     client: Client, conversation: Conversation, ctx: FlowContext,
   ): Promise<void> {
     const choice = this.resolveChoice(clickedId, text, ctx);
-    const map: Record<string, string> = { entry_private: 'house_private', entry_shared: 'house_shared' };
+    const map: Record<string, string> = ctx.entry_for === 'apt_family'
+      ? { entry_private: 'apartment_family_private', entry_shared: 'apartment_family_shared' }
+      : { entry_private: 'house_private', entry_shared: 'house_shared' };
     const finalType = choice ? map[choice] : undefined;
     if (!finalType) { await this.reAsk(client, conversation, ctx); return; }
 
-    await this.askPurpose(client, conversation, { ...ctx, property_type: finalType });
+    await this.askPurpose(client, conversation, { ...ctx, property_type: finalType, entry_for: undefined });
   }
 
   // ===========================================================================
@@ -564,7 +598,7 @@ export class ConversationService {
 
   private async stepPurpose(
     clickedId: string | null, text: string,
-    client: Client, conversation: Conversation, ctx: FlowContext,
+    client: Client, conversation: Conversation, ctx: FlowContext, message: Message,
   ): Promise<void> {
     const choice = this.resolveChoice(clickedId, text, ctx);
     const purpose: 'rent' | 'buy' | undefined =
@@ -574,71 +608,25 @@ export class ConversationService {
 
     if (!purpose) { await this.reAsk(client, conversation, ctx); return; }
 
-    await this.askBudget(client, conversation, { ...ctx, purpose });
-  }
-
-  // ===========================================================================
-  // Step 5 — Budget
-  // The office operates in Buraydah only, so there is no city/district to ask
-  // about — go straight from purpose to budget.
-  // ===========================================================================
-
-  private async askBudget(client: Client, conversation: Conversation, ctx: FlowContext): Promise<void> {
-    await this.saveFlowContext(conversation.id, { ...ctx, state: 'budget', location: 'بريدة', pending: undefined });
-    const label = PROPERTY_TYPE_MAP[ctx.property_type ?? '']?.label ?? 'العقار';
-    const hint = ctx.purpose === 'rent'
-      ? '_مثال: 20 ألف — أو اكتب 20 فقط — أو مفتوح_'
-      : '_مثال: 800 ألف — أو 1.5 مليون — أو مفتوح_';
-    await whatsappService.sendText(
-      client.phone,
-      `${ack()} — ${label}\n\nوش ميزانيتك التقريبية؟\n${hint}`,
-      this.waInstance(conversation),
-    );
-  }
-
-  // ===========================================================================
-  // Step 5 — Budget, then hand over to the AI
-  // ===========================================================================
-
-  private async stepBudget(
-    text: string, client: Client, conversation: Conversation, ctx: FlowContext, message: Message,
-  ): Promise<void> {
-    const norm = normalizeAr(text);
-    const isOpen = OPEN_BUDGET.some(w => norm.includes(normalizeAr(w)));
-    const budget = isOpen ? undefined : extractBudget(text, ctx.purpose);
-
-    if (!budget && !isOpen) {
-      await whatsappService.sendText(
-        client.phone,
-        `اكتب الميزانية بالأرقام من فضلك\n${ctx.purpose === 'rent' ? '_مثال: 20 ألف — أو 20_' : '_مثال: 800 ألف — أو 1.5 مليون_'}\nأو اكتب *مفتوح* إذا لم تحددها بعد`,
-        this.waInstance(conversation),
-      );
-      return;
-    }
-
-    if (budget) await clientService.update(client.id, { budget_max: budget } as any);
-
-    const newCtx: FlowContext = { ...ctx, state: 'ai', budget, pending: undefined };
+    // No budget question — the client wants the type+purpose alone to trigger
+    // the search. The office operates in Buraydah only, so location is fixed too.
+    const newCtx: FlowContext = { ...ctx, state: 'ai', purpose, location: 'بريدة', pending: undefined };
     await this.saveFlowContext(conversation.id, newCtx);
 
     const typeInfo = PROPERTY_TYPE_MAP[ctx.property_type ?? ''];
     if (typeInfo) {
       await clientService.update(client.id, {
         preferred_property_types: typeInfo.db_types,
-        purpose: ctx.purpose === 'rent' ? 'rent' : 'sale',
+        purpose: purpose === 'rent' ? 'rent' : 'sale',
       } as any);
     }
 
-    const purposeAr = ctx.purpose === 'rent' ? 'الإيجار' : 'الشراء';
-    const budgetStr = budget
-      ? budget >= 1_000_000 ? `${(budget / 1_000_000).toFixed(1)} مليون ريال` : `${Math.round(budget / 1_000)} ألف ريال`
-      : 'ميزانية مفتوحة';
-
-    message.content = `أبحث عن ${typeInfo?.label ?? ctx.property_type ?? 'عقار'} لـ${purposeAr} في بريدة بميزانية ${budgetStr}`;
+    const purposeAr = purpose === 'rent' ? 'الإيجار' : 'الشراء';
+    message.content = `أبحث عن ${typeInfo?.label ?? ctx.property_type ?? 'عقار'} لـ${purposeAr} في بريدة`;
 
     await whatsappService.sendText(
       client.phone,
-      `${ack()}\n\n${typeInfo?.label ?? 'عقار'}\n${budgetStr}\n\nلحظة أشوف لك أفضل المتاح`,
+      `${ack()}\n\n${typeInfo?.label ?? 'عقار'}\n\nلحظة أشوف لك أفضل المتاح`,
       this.waInstance(conversation),
     );
     await sleep(700);
