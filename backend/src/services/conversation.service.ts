@@ -377,18 +377,27 @@ export class ConversationService {
       return;
     }
 
-    // Booking a viewing — an explicit request any time, or a bare "نعم" right
-    // after the bot itself offered one (booking_prompted, set wherever
-    // properties are sent). Skipped while already mid-booking so the time
-    // reply below isn't mistaken for a fresh request.
-    if (ctx.state !== 'booking_time') {
+    // Booking a viewing — an explicit request any time (but never on a brand
+    // new client's very first message, before they've even seen the welcome
+    // menu), or a bare "نعم" right after the bot itself offered one.
+    if (ctx.state !== 'booking_time' && !isNew) {
       const BOOKING_WORDS = ['معاينة', 'موعد', 'احجز', 'ارتب لي', 'ارتب', 'اعاين'];
       const AGREEMENT_WORDS = ['نعم', 'ايه', 'ايوه', 'اكيد', 'تمام', 'ابشر', 'yes', 'ok'];
       const normBooking = normalizeAr(message.content ?? '');
+      const acceptsOffer = Boolean(ctx.booking_prompted) && AGREEMENT_WORDS.some((w) => normBooking === normalizeAr(w));
       const wantsBooking = Boolean(normBooking) && (
-        BOOKING_WORDS.some((w) => normBooking.includes(normalizeAr(w))) ||
-        (Boolean(ctx.booking_prompted) && AGREEMENT_WORDS.some((w) => normBooking === normalizeAr(w)))
+        BOOKING_WORDS.some((w) => normBooking.includes(normalizeAr(w))) || acceptsOffer
       );
+
+      // The offer to book is only "live" for the one reply right after it was
+      // made — otherwise booking_prompted would stay true forever (nothing
+      // else clears it) and an unrelated "تمام" turns/days later, one of the
+      // most common throwaway replies in Arabic chat, would be misread as
+      // accepting a viewing no one asked about anymore.
+      if (ctx.booking_prompted && !wantsBooking) {
+        await this.saveFlowContext(conversation.id, { ...ctx, booking_prompted: false });
+      }
+
       if (wantsBooking) {
         await this.startBooking(client, conversation, ctx);
         return;
@@ -811,6 +820,16 @@ export class ConversationService {
         const result = await propertyService.search(enriched);
         properties = result.properties;
         searchSummary = this.buildSearchSummary(ctx, aiResult.extracted_data);
+
+        // A narrowing the AI extracted (a specific feature, district, etc.) can
+        // legitimately match nothing even though the broader preloaded search
+        // found options. buildContextBlock told the AI those options exist, so
+        // its own reply likely already implies results are coming — falling
+        // back here avoids sending that text with no properties behind it.
+        if (properties.length === 0 && preloadedProperties.length > 0) {
+          properties = preloadedProperties;
+          searchSummary = 'بنفس المواصفات المطلوبة بالضبط ما لقيت خيار، لكن هذي أقرب المتاح';
+        }
       } else if (preloadedProperties.length > 0 && ctx.state === 'ai') {
         properties = preloadedProperties;
         searchSummary = this.buildSearchSummary(ctx, aiResult.extracted_data);

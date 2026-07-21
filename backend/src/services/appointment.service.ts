@@ -9,10 +9,12 @@ export class AppointmentService {
   private get db() { return getDatabase(); }
 
   async create(data: Omit<Appointment, 'id' | 'created_at' | 'updated_at' | 'reminder_sent'>): Promise<Appointment> {
-    const [appt] = await this.db('appointments').insert({
-      ...data,
-      reminder_sent: false,
-    }).returning('*') as Appointment[];
+    // Knex throws "Undefined binding(s) detected" if any value is undefined
+    // (e.g. no property_id for a viewing that isn't tied to a specific listing).
+    const clean = Object.fromEntries(
+      Object.entries({ ...data, reminder_sent: false }).filter(([, v]) => v !== undefined)
+    );
+    const [appt] = await this.db('appointments').insert(clean).returning('*') as Appointment[];
 
     if (!appt) throw new Error('Failed to create appointment');
 
