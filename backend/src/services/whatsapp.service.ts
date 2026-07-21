@@ -119,25 +119,40 @@ export class WhatsAppService {
     await this.sendText(to, textMessage, instance);
 
     // The client wants a photo with every matching listing, not just the top
-    // few — send one per property regardless of how many matched.
+    // few — send one per property regardless of how many matched. A single
+    // broken image URL used to throw and abort the whole loop, which the
+    // caller's try/catch then treated as a full pipeline failure — the
+    // customer got the text list but every remaining photo silently vanished.
     for (const prop of properties) {
       if (prop.main_image_url) {
-        const caption = `${prop.title_ar ?? prop.title}\n${prop.district_name ?? ''} - ${prop.city_name ?? ''}\n${prop.price?.toLocaleString('ar-SA') ?? ''} ريال\n${prop.code}`;
-        await this.sendImage(to, prop.main_image_url, caption, instance);
-        await this.delay(500);
+        try {
+          const caption = `${prop.title_ar ?? prop.title}\n${prop.district_name ?? ''} - ${prop.city_name ?? ''}\n${prop.price?.toLocaleString('ar-SA') ?? ''} ريال\n${prop.code}`;
+          await this.sendImage(to, prop.main_image_url, caption, instance);
+          await this.delay(500);
+        } catch (error: any) {
+          logger.warn('Property image skipped after send failure', {
+            propertyId: prop.id, code: prop.code, url: prop.main_image_url, error: error?.message,
+          });
+        }
       }
 
       // Send location if available
       if (prop.latitude && prop.longitude) {
-        await this.sendLocation(
-          to,
-          prop.latitude,
-          prop.longitude,
-          prop.title_ar ?? prop.title,
-          prop.address,
-          instance
-        );
-        await this.delay(500);
+        try {
+          await this.sendLocation(
+            to,
+            prop.latitude,
+            prop.longitude,
+            prop.title_ar ?? prop.title,
+            prop.address,
+            instance
+          );
+          await this.delay(500);
+        } catch (error: any) {
+          logger.warn('Property location skipped after send failure', {
+            propertyId: prop.id, code: prop.code, error: error?.message,
+          });
+        }
       }
     }
   }

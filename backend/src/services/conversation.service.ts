@@ -747,10 +747,9 @@ export class ConversationService {
       properties = properties.filter((p) => !shownIds.has(p.id));
       const allAlreadyShown = matchedBeforeDedup > 0 && properties.length === 0;
 
-      let latestCtx = ctx;
+      // Analytics only — must never block sending properties to the client.
       if (properties.length > 0) {
         for (const prop of properties) {
-          // Analytics only — must never block sending properties to the client.
           try {
             await propertyService.incrementInquiryCount(prop.id);
             await this.db('client_property_interests')
@@ -760,21 +759,19 @@ export class ConversationService {
             logger.warn('interest tracking skipped', { error: e?.message });
           }
         }
-        latestCtx = {
-          ...ctx,
-          shown_property_ids: [...shownIds, ...properties.map((p) => p.id)],
-          last_shown_properties: properties.map((p) => p.id),
-        };
-        await this.saveFlowContext(conversation.id, latestCtx);
       }
 
       let responseText = aiResult.response;
       if (allAlreadyShown) {
         responseText = `${responseText}\n\nهذي كل الخيارات المتوفرة حالياً وسبق أن أرسلتها لك، لا يوجد جديد غيرها حالياً.`;
       }
+      // Tracks the flow state actually persisted, so the shown_property_ids
+      // save below (which happens last) never clobbers an escalation.
+      let currentState = ctx.state;
       if (aiResult.should_escalate) {
         await this.db('conversations').where('id', conversation.id).update({ ai_handoff_requested: true, updated_at: new Date() });
-        await this.saveFlowContext(conversation.id, { ...latestCtx, state: 'escalated' });
+        await this.saveFlowContext(conversation.id, { ...ctx, state: 'escalated' });
+        currentState = 'escalated';
         await this.notifyAgent(client, conversation, aiResult.escalation_reason);
         // Only when a human takes over do working hours matter.
         responseText = `${responseText}\n\n${this.handoffNote()}`;
@@ -788,7 +785,18 @@ export class ConversationService {
       });
 
       if (properties.length > 0) {
+        // sendProperties no longer throws on a single broken image/location —
+        // it logs and moves on — so reaching this point means the text list
+        // and whatever photos succeeded are already with the customer. Mark
+        // them shown only now: if anything above had failed instead, the
+        // properties stay unmarked and are still offerable on retry.
         await whatsappService.sendProperties(client.phone, properties, searchSummary, this.waInstance(conversation));
+        await this.saveFlowContext(conversation.id, {
+          ...ctx,
+          state: currentState,
+          shown_property_ids: [...shownIds, ...properties.map((p) => p.id)],
+          last_shown_properties: properties.map((p) => p.id),
+        });
       }
 
       if (['new', 'contacted', 'interested'].includes(client.status)) {
