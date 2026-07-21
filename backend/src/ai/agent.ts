@@ -152,7 +152,7 @@ export const processMessage = async (
       ...historyMessages,
       {
         role: 'user',
-        content: messageContent + '\n\n[SYSTEM: في نهاية ردك أضف سطراً بهذا الشكل بالضبط. property_type و purpose يجب أن تكونا بالإنجليزية من القيم المذكورة فقط أو null:\nJSON:{"intent":"search_property|property_details|price_inquiry|appointment_request|greeting|complaint|human_agent_request|general_inquiry|unknown","budget_max":null,"budget_min":null,"property_type":"land|apartment|villa|building|office|showroom|warehouse|farm|other|null","city":null,"district":null,"rooms":null,"purpose":"sale|rent|null","client_name":null,"urgency":"low|medium|high","sentiment":"positive|neutral|negative"}]',
+        content: messageContent + '\n\n[SYSTEM: في نهاية ردك أضف سطراً بهذا الشكل بالضبط. property_type و purpose يجب أن تكونا بالإنجليزية من القيم المذكورة فقط أو null. special_requirements: قائمة كلمات عربية قصيرة لأي ميزة محددة ذكرها العميل (مثل "مطبخ راكب"، "قريب من مدرسة")، أو null إن لم يذكر شيئاً:\nJSON:{"intent":"search_property|property_details|price_inquiry|appointment_request|greeting|complaint|human_agent_request|general_inquiry|unknown","budget_max":null,"budget_min":null,"property_type":"land|apartment|villa|building|office|showroom|warehouse|farm|other|null","city":null,"district":null,"rooms":null,"purpose":"sale|rent|null","special_requirements":null,"client_name":null,"urgency":"low|medium|high","sentiment":"positive|neutral|negative"}]',
       },
     ];
 
@@ -277,7 +277,9 @@ const parseAIOutput = (
     client_name: parsed.client_name ?? undefined,
     urgency: parsed.urgency ?? 'low',
     sentiment: parsed.sentiment ?? 'neutral',
-    special_requirements: undefined,
+    special_requirements: Array.isArray(parsed.special_requirements)
+      ? parsed.special_requirements.filter((s: any) => typeof s === 'string' && s.trim()).slice(0, 5)
+      : undefined,
   };
 
   // Final safety net: strip any stray JSON/code-fence remnants the regex above
@@ -479,6 +481,7 @@ const buildSearchParams = (data: AIExtractedData): PropertySearchParams => ({
   area_max: data.area_max,
   rooms: data.rooms,
   purpose: data.purpose,
+  features: data.special_requirements,
   // The client wants every matching listing sent, not a top-5 sample.
   limit: 200,
   sort_by: 'featured',

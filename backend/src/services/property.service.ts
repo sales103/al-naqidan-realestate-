@@ -63,6 +63,19 @@ export class PropertyService {
     if (params.area_max !== undefined) query.where('p.area_sqm', '<=', params.area_max);
     if (params.rooms !== undefined) query.where('p.rooms', '>=', params.rooms);
 
+    // Each requested feature must appear (as a substring match, so "مطبخ" also
+    // matches a listed "مطبخ راكب") in either features or amenities — AND
+    // across multiple features, since asking for two both must be present.
+    for (const feature of params.features ?? []) {
+      query.whereRaw(
+        `(
+          EXISTS (SELECT 1 FROM jsonb_array_elements_text(COALESCE(p.features, '[]'::jsonb)) f WHERE f ILIKE ?)
+          OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(COALESCE(p.amenities, '[]'::jsonb)) f WHERE f ILIKE ?)
+        )`,
+        [`%${feature}%`, `%${feature}%`],
+      );
+    }
+
     // Count total
     const countQuery = query.clone().clearSelect().count('p.id as count');
     const [{ count }] = await countQuery as any[];

@@ -6,6 +6,7 @@ import { processMessage, transcribeAudio, analyzeImage, formatPropertyDetails } 
 import { propertyService } from './property.service.js';
 import { clientService } from './client.service.js';
 import { whatsappService } from './whatsapp.service.js';
+import { appointmentService } from './appointment.service.js';
 import { sseService } from './sse.service.js';
 import {
   detectComplaint, acknowledgement, nextQuestion, buildAgentSummary, handoverLine,
@@ -33,7 +34,7 @@ function recordError(where: string, e: any): void {
 // welcome → purpose → type → entry → location → budget → ai → escalated
 // =============================================================================
 
-type FlowState = 'welcome' | 'category' | 'type' | 'entry' | 'purpose' | 'ai' | 'complaint' | 'escalated';
+type FlowState = 'welcome' | 'category' | 'type' | 'entry' | 'purpose' | 'ai' | 'booking_time' | 'complaint' | 'escalated';
 
 /** One selectable option. `keywords` let the customer answer in their own words. */
 interface FlowOption {
@@ -56,6 +57,10 @@ interface FlowContext {
   shown_property_ids?: string[];
   /** Ordered ids from the most recent batch actually sent — "قارن 1 و3" resolves against this. */
   last_shown_properties?: string[];
+  /** True right after the bot itself asked about a viewing, so a bare "نعم" is understood. */
+  booking_prompted?: boolean;
+  /** Which property (if any) a viewing is being booked for. */
+  booking?: { property_id?: string };
   /** Complaint mode: the bot stays here until a human takes over. */
   complaint?: {
     level: AngerLevel;
@@ -141,8 +146,42 @@ function extractBudget(text: string, purpose?: 'rent' | 'buy'): number | undefin
 const ACKS = ['أبشر', 'الله يعطيك العافية', 'يسعدني خدمتك', 'بكل سرور', 'تمام', 'ممتاز'];
 const ack = (): string => ACKS[Math.floor(Math.random() * ACKS.length)]!;
 
+// ─── Per-client rate limiting ────────────────────────────────────────────────
+// Redis caching is disabled in production for this project (no valid host
+// configured — see cacheGet/cacheSet, which silently no-op there), so a
+// Redis-backed limiter would do nothing. This process runs as a single
+// Railway replica, so an in-memory sliding window is correct and simple —
+// it just wouldn't survive a redeploy, which is fine for abuse throttling.
+const RATE_LIMIT_WINDOW_MS = 2 * 60 * 1000;
+const RATE_LIMIT_MAX = 20;
+const rateLimitHits = new Map<string, number[]>();
+/** True if the phone is over the limit for this window; also records the hit. */
+function isRateLimited(phone: string): boolean {
+  const now = Date.now();
+  const hits = (rateLimitHits.get(phone) ?? []).filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+  hits.push(now);
+  rateLimitHits.set(phone, hits);
+  // Prevent unbounded growth from one-off senders that never come back.
+  if (rateLimitHits.size > 5000) rateLimitHits.clear();
+  return hits.length > RATE_LIMIT_MAX;
+}
+
+/**
+ * A concrete Riyadh-time slot (UTC+3, no DST), computed with UTC getters/
+ * setters throughout so it's correct regardless of the server's own timezone.
+ */
+function riyadhSlot(daysFromNow: number, hour: number, minute = 0): Date {
+  const riyadhNow = new Date(Date.now() + 3 * 3600000);
+  const target = Date.UTC(
+    riyadhNow.getUTCFullYear(), riyadhNow.getUTCMonth(), riyadhNow.getUTCDate() + daysFromNow,
+    hour, minute, 0,
+  );
+  return new Date(target - 3 * 3600000);
+}
+
 export class ConversationService {
   private get db() { return getDatabase(); }
+  private readonly rateLimitWarnedAt = new Map<string, number>();
 
   private extractButtonId(payload: WhatsAppWebhookPayload): string | null {
     const msg = payload.data.message;
@@ -230,6 +269,23 @@ export class ConversationService {
       }
 
       await whatsappService.markAsRead(whatsappMessageId, chatId, this.waInstance(conversation));
+      whatsappService.sendTyping(client.phone, this.waInstance(conversation)).catch(() => {});
+
+      if (isRateLimited(phone)) {
+        logger.warn('Client rate-limited', { phone, clientId: client.id });
+        // Warn once, not on every blocked message — a flood shouldn't turn
+        // into a flood of "please slow down" replies.
+        const lastWarned = this.rateLimitWarnedAt.get(phone) ?? 0;
+        if (Date.now() - lastWarned > RATE_LIMIT_WINDOW_MS) {
+          this.rateLimitWarnedAt.set(phone, Date.now());
+          await whatsappService.sendText(
+            client.phone,
+            'وصلتني رسائل كثيرة منك خلال وقت قصير. أعطني لحظة وبرد عليك.',
+            this.waInstance(conversation),
+          ).catch(() => {});
+        }
+        return;
+      }
 
       // Only an explicit false disables the AI — a missing column must not silence the bot.
       if (conversation.is_ai_enabled === false || conversation.ai_handoff_requested === true) {
@@ -321,12 +377,31 @@ export class ConversationService {
       return;
     }
 
+    // Booking a viewing — an explicit request any time, or a bare "نعم" right
+    // after the bot itself offered one (booking_prompted, set wherever
+    // properties are sent). Skipped while already mid-booking so the time
+    // reply below isn't mistaken for a fresh request.
+    if (ctx.state !== 'booking_time') {
+      const BOOKING_WORDS = ['معاينة', 'موعد', 'احجز', 'ارتب لي', 'ارتب', 'اعاين'];
+      const AGREEMENT_WORDS = ['نعم', 'ايه', 'ايوه', 'اكيد', 'تمام', 'ابشر', 'yes', 'ok'];
+      const normBooking = normalizeAr(message.content ?? '');
+      const wantsBooking = Boolean(normBooking) && (
+        BOOKING_WORDS.some((w) => normBooking.includes(normalizeAr(w))) ||
+        (Boolean(ctx.booking_prompted) && AGREEMENT_WORDS.some((w) => normBooking === normalizeAr(w)))
+      );
+      if (wantsBooking) {
+        await this.startBooking(client, conversation, ctx);
+        return;
+      }
+    }
+
     if (isNew || ctx.state === 'welcome') { await this.stepWelcome(client, conversation, ctx, isNew); return; }
     if (ctx.state === 'ai' || ctx.state === 'escalated') { await this.processWithAI(message, client, conversation, ctx, payload); return; }
     if (ctx.state === 'category') { await this.stepCategory(clickedId, text, client, conversation, ctx); return; }
     if (ctx.state === 'type') { await this.stepType(clickedId, text, client, conversation, ctx); return; }
     if (ctx.state === 'entry') { await this.stepEntry(clickedId, text, client, conversation, ctx); return; }
     if (ctx.state === 'purpose') { await this.stepPurpose(clickedId, text, client, conversation, ctx, message); return; }
+    if (ctx.state === 'booking_time') { await this.stepBookingTime(clickedId, text, client, conversation, ctx); return; }
   }
 
   // ===========================================================================
@@ -796,6 +871,9 @@ export class ConversationService {
           state: currentState,
           shown_property_ids: [...shownIds, ...properties.map((p) => p.id)],
           last_shown_properties: properties.map((p) => p.id),
+          // formatPropertiesResponse's footer always offers a viewing — a bare
+          // "نعم" right after this should be understood as accepting it.
+          booking_prompted: true,
         });
       }
 
@@ -856,6 +934,7 @@ export class ConversationService {
           ...ctx,
           shown_property_ids: [...shownIds, ...properties.map((p) => p.id)],
           last_shown_properties: properties.map((p) => p.id),
+          booking_prompted: true,
         });
         await sleep(400);
         await whatsappService.sendText(
@@ -993,7 +1072,89 @@ export class ConversationService {
     if (loc) parts.push(`في ${loc}`);
     const budget = ctx.budget ?? extracted.budget_max;
     if (budget) parts.push(`بميزانية ${budget >= 1_000_000 ? (budget/1_000_000).toFixed(1)+' مليون' : (budget/1_000).toFixed(0)+' ألف'} ريال`);
+    if (Array.isArray(extracted.special_requirements) && extracted.special_requirements.length) {
+      parts.push(`فيها ${extracted.special_requirements.join(' و')}`);
+    }
     return parts.join(' ') || 'طلبك';
+  }
+
+  // ===========================================================================
+  // Viewing booking — concrete time slots instead of free-text date parsing,
+  // consistent with how every other choice in this bot works (a tappable
+  // list, not an open question that has to be guessed at).
+  // ===========================================================================
+
+  private async startBooking(client: Client, conversation: Conversation, ctx: FlowContext): Promise<void> {
+    // Attach the property automatically when there's exactly one candidate;
+    // with several recently shown, ask instead of guessing which one.
+    const shown = ctx.last_shown_properties ?? [];
+    const property_id = shown.length === 1 ? shown[0] : undefined;
+
+    await this.askOptions(client, conversation, ctx, 'booking_time', 'موعد المعاينة', 'أي وقت يناسبك؟', [
+      { id: 'slot_0', title: 'غداً 10:30 صباحاً', keywords: ['غدا صباح', 'بكرة صباح'] },
+      { id: 'slot_1', title: 'غداً 5:00 مساءً',   keywords: ['غدا مساء', 'بكرة مساء'] },
+      { id: 'slot_2', title: 'بعد غد 10:30 صباحاً', keywords: ['بعد بكرة صباح'] },
+      { id: 'slot_3', title: 'بعد غد 5:00 مساءً',   keywords: ['بعد بكرة مساء'] },
+      { id: 'slot_other', title: 'وقت آخر',        keywords: ['وقت اخر', 'غير كذا'] },
+    ], { booking: { property_id }, booking_prompted: false });
+  }
+
+  private async stepBookingTime(
+    clickedId: string | null, text: string,
+    client: Client, conversation: Conversation, ctx: FlowContext,
+  ): Promise<void> {
+    const inst = this.waInstance(conversation);
+    const choice = this.resolveChoice(clickedId, text, ctx);
+
+    const slots: Record<string, Date> = {
+      slot_0: riyadhSlot(1, 10, 30), slot_1: riyadhSlot(1, 17, 0),
+      slot_2: riyadhSlot(2, 10, 30), slot_3: riyadhSlot(2, 17, 0),
+    };
+
+    if (choice === 'slot_other') {
+      await this.saveFlowContext(conversation.id, { ...ctx, state: 'escalated', pending: undefined });
+      await this.db('conversations').where('id', conversation.id).update({ ai_handoff_requested: true, updated_at: new Date() });
+      await whatsappService.sendText(
+        client.phone,
+        'تمام، دوّن الوقت اللي يناسبك وبيتواصل معك أحد مستشارينا لتثبيت الموعد مباشرة.',
+        inst,
+      );
+      await this.notifyAgent(client, conversation, `العميل يطلب موعد معاينة بوقت مخصص: "${text}"`);
+      return;
+    }
+
+    const scheduled_at = choice ? slots[choice] : undefined;
+    if (!scheduled_at) { await this.reAsk(client, conversation, ctx); return; }
+
+    let propertyTitle = 'معاينة عقار';
+    const propertyId = ctx.booking?.property_id;
+    if (propertyId) {
+      const property = await propertyService.findById(propertyId).catch(() => null);
+      if (property) propertyTitle = `معاينة: ${property.title_ar ?? property.title}`;
+    }
+
+    try {
+      await appointmentService.create({
+        client_id: client.id,
+        property_id: propertyId,
+        title: propertyTitle,
+        status: 'scheduled',
+        scheduled_at,
+        duration_minutes: 30,
+        location: 'حسب موقع العقار — سيتم التأكيد مع المستشار',
+      } as any);
+      // appointmentService.create already sends its own WhatsApp confirmation.
+      await this.saveFlowContext(conversation.id, { ...ctx, state: 'ai', booking: undefined, pending: undefined });
+    } catch (e: any) {
+      logger.error('appointment booking failed', { clientId: client.id, error: e?.message });
+      await whatsappService.sendText(
+        client.phone,
+        'صار خطأ تقني وأنا أحاول أثبت الموعد، وبيتواصل معك أحد مستشارينا لتأكيده يدوياً.',
+        inst,
+      );
+      await this.notifyAgent(client, conversation, 'فشل حجز موعد معاينة آلياً — يحتاج تثبيت يدوي');
+      await this.saveFlowContext(conversation.id, { ...ctx, state: 'ai', booking: undefined, pending: undefined });
+    }
   }
 
   // ===========================================================================
@@ -1032,9 +1193,21 @@ export class ConversationService {
     }
 
     await whatsappService.sendText(client.phone, formatPropertyDetails(property), inst);
-    if (property.main_image_url) {
-      await whatsappService.sendImage(client.phone, property.main_image_url, undefined, inst).catch(() => {});
+
+    // findByCode doesn't join property_media, and a "details" request is the
+    // one moment the customer explicitly wants everything — not just the
+    // single cover photo the compact list uses. Re-fetch by id to get the
+    // full gallery (findById does the join), capped so a property with a
+    // huge album doesn't flood the chat.
+    const full = await propertyService.findById(property.id).catch(() => null);
+    const gallery = [property.main_image_url, ...((full?.media ?? []).map((m: any) => m.url))]
+      .filter((url, i, arr): url is string => Boolean(url) && arr.indexOf(url) === i)
+      .slice(0, 6);
+
+    for (const url of gallery) {
+      await whatsappService.sendImage(client.phone, url, undefined, inst).catch(() => {});
     }
+
     if (property.latitude && property.longitude) {
       await whatsappService.sendLocation(
         client.phone, property.latitude, property.longitude,

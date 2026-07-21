@@ -181,6 +181,18 @@ export class WhatsAppService {
     }
   }
 
+  /** Shows "typing…" while the bot is thinking — a small professionalism
+   * touch so the reply doesn't just appear with no acknowledgement at all. */
+  async sendTyping(to: string, instance: string = config.whatsapp.instanceName): Promise<void> {
+    try {
+      await this.client.post(`chat/sendPresence/${instance}`, {
+        number: to, presence: 'composing', delay: 3000,
+      });
+    } catch {
+      // Cosmetic only — never let this block or fail the reply pipeline.
+    }
+  }
+
   async getInstanceStatus(): Promise<{ state: string; connected: boolean }> {
     try {
       const response = await this.client.get(
