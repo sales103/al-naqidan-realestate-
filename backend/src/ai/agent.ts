@@ -433,7 +433,7 @@ export const formatPropertiesResponse = (properties: Property[], searchSummary: 
 // =============================================================================
 
 const buildConversationHistory = (messages: Message[]): OpenAI.Chat.ChatCompletionMessageParam[] =>
-  messages.slice(-12).map((msg) => ({
+  messages.slice(-20).map((msg) => ({
     role: msg.direction === 'inbound' ? ('user' as const) : ('assistant' as const),
     content: msg.transcription ?? msg.content ?? '[رسالة وسائط]',
   }));
@@ -494,7 +494,16 @@ const determineEscalation = (
 ): { shouldEscalate: boolean; escalationReason?: string } => {
   if (intent.primary === 'human_agent_request') return { shouldEscalate: true, escalationReason: 'طلب العميل التحدث مع موظف' };
   if (intent.primary === 'complaint') return { shouldEscalate: true, escalationReason: 'شكوى من العميل' };
-  if (['negotiating', 'contract_pending'].includes(client.status)) return { shouldEscalate: true, escalationReason: 'عميل في مرحلة التفاوض' };
+  // Status-based escalation is meant for an active, ongoing negotiation, not a
+  // permanent label — client.status only changes on its own next update, so
+  // without a recency check a client who was ever 'negotiating' would find
+  // the bot escalating (and, previously, going silent) on every future
+  // message indefinitely, even months later.
+  const RECENT_NEGOTIATION_MS = 48 * 3600 * 1000;
+  const updatedRecently = client.updated_at && (Date.now() - new Date(client.updated_at).getTime() < RECENT_NEGOTIATION_MS);
+  if (['negotiating', 'contract_pending'].includes(client.status) && updatedRecently) {
+    return { shouldEscalate: true, escalationReason: 'عميل في مرحلة التفاوض' };
+  }
   if (['الآن', 'فوراً', 'عاجل', 'ضروري', 'هام جداً'].some(kw => message.includes(kw))) return { shouldEscalate: true, escalationReason: 'طلب عاجل' };
   return { shouldEscalate: false };
 };

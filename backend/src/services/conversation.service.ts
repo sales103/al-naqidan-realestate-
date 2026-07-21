@@ -288,13 +288,14 @@ export class ConversationService {
       }
 
       // Only an explicit false disables the AI — a missing column must not silence the bot.
-      if (conversation.is_ai_enabled === false || conversation.ai_handoff_requested === true) {
+      // ai_handoff_requested is a "please loop in a human" flag, not "stop
+      // helping": a customer who once said "ممكن أتكلم مع حد؟" in passing, or
+      // whose status ever became 'negotiating', shouldn't lose the bot for
+      // every future message. Only an explicit staff takeover (is_ai_enabled
+      // set to false from the dashboard) actually silences it.
+      if (conversation.is_ai_enabled === false) {
         // Log it: a silent return is impossible to diagnose from the outside.
-        logger.info('AI reply skipped', {
-          conversationId: conversation.id,
-          is_ai_enabled: conversation.is_ai_enabled,
-          handoff: conversation.ai_handoff_requested,
-        });
+        logger.info('AI reply skipped — human has taken over', { conversationId: conversation.id });
         return;
       }
 
@@ -762,7 +763,10 @@ export class ConversationService {
 
       if (!messageContent.trim()) messageContent = '[رسالة وسائط]';
 
-      const history = await this.getConversationHistory(conversation.id, 10);
+      // agent.ts keeps the last 20 of whatever it's handed — fetching only 10
+      // here made that cap moot and meant the AI could never see further back
+      // than 5 exchanges, "forgetting" things a customer said a bit earlier.
+      const history = await this.getConversationHistory(conversation.id, 24);
 
       // Pre-search using flow context. The office operates in Buraydah only, so
       // there is no city/district to filter by — every listing already is one.
