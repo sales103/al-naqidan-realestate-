@@ -2,7 +2,7 @@ import { getDatabase } from '../database/connection.js';
 import { cacheGet, cacheSet, cacheKeys } from '../database/redis.js';
 import { logger } from '../config/logger.js';
 import { config } from '../config/index.js';
-import { processMessage, transcribeAudio, analyzeImage } from '../ai/agent.js';
+import { processMessage, transcribeAudio, analyzeImage, formatPropertyDetails } from '../ai/agent.js';
 import { propertyService } from './property.service.js';
 import { clientService } from './client.service.js';
 import { whatsappService } from './whatsapp.service.js';
@@ -285,6 +285,23 @@ export class ConversationService {
     }
     const clickedId = this.extractButtonId(payload);
     const text = (message.content ?? '').trim();
+
+    // "تفاصيل الكود X" or "تفاصيل 2" (referencing the last batch) — checked
+    // before the state machine so it works no matter which step the
+    // conversation is on. A bare property code always matches on its own;
+    // a bare number only counts as a details request alongside a detail word,
+    // otherwise "2" during the type/purpose steps would misfire.
+    const CODE_PATTERN = /\b[A-Za-z]{2,8}-[A-Za-z0-9]*\d[A-Za-z0-9]*(?:-\d+)?\b/;
+    const DETAIL_WORDS = ['تفاصيل', 'تفصيل', 'معلومات عن', 'الكود'];
+    const rawText = message.content ?? '';
+    const normDetail = normalizeAr(rawText);
+    const hasCode = CODE_PATTERN.test(rawText);
+    const hasDetailWord = DETAIL_WORDS.some((w) => normDetail.includes(normalizeAr(w)));
+    const hasNumber = /\d/.test(normDetail);
+    if (hasCode || (hasDetailWord && hasNumber && (ctx.last_shown_properties?.length ?? 0) > 0)) {
+      await this.handleDetails(message, client, conversation, ctx);
+      return;
+    }
 
     // "قارن 1 و3" against the last batch actually sent — checked before the
     // state machine so it works no matter which step the conversation is on.
@@ -969,6 +986,54 @@ export class ConversationService {
     const budget = ctx.budget ?? extracted.budget_max;
     if (budget) parts.push(`بميزانية ${budget >= 1_000_000 ? (budget/1_000_000).toFixed(1)+' مليون' : (budget/1_000).toFixed(0)+' ألف'} ريال`);
     return parts.join(' ') || 'طلبك';
+  }
+
+  // ===========================================================================
+  // Property details — a specific code, or a number from the last batch sent
+  // ===========================================================================
+
+  private async handleDetails(
+    message: Message, client: Client, conversation: Conversation, ctx: FlowContext,
+  ): Promise<void> {
+    const inst = this.waInstance(conversation);
+    const raw = (message.content ?? '').trim();
+
+    let property: any = null;
+
+    const codeMatch = raw.match(/\b[A-Za-z]{2,8}-[A-Za-z0-9]*\d[A-Za-z0-9]*(?:-\d+)?\b/);
+    if (codeMatch) {
+      property = await propertyService.findByCode(codeMatch[0]);
+    }
+
+    if (!property) {
+      const shown = ctx.last_shown_properties ?? [];
+      const numMatch = normalizeAr(raw).match(/\d+/);
+      const idx = numMatch ? parseInt(numMatch[0], 10) : NaN;
+      if (shown.length && idx >= 1 && idx <= shown.length) {
+        property = await propertyService.findById(shown[idx - 1]!);
+      }
+    }
+
+    if (!property) {
+      await whatsappService.sendText(
+        client.phone,
+        'اكتب كود العقار، أو رقمه من آخر قائمة أرسلتها لك، عشان أعرض لك التفاصيل الكاملة.',
+        inst,
+      );
+      return;
+    }
+
+    await whatsappService.sendText(client.phone, formatPropertyDetails(property), inst);
+    if (property.main_image_url) {
+      await whatsappService.sendImage(client.phone, property.main_image_url, undefined, inst).catch(() => {});
+    }
+    if (property.latitude && property.longitude) {
+      await whatsappService.sendLocation(
+        client.phone, property.latitude, property.longitude,
+        property.title_ar ?? property.title, property.address, inst,
+      ).catch(() => {});
+    }
+    await propertyService.incrementViewCount(property.id).catch(() => {});
   }
 
   // ===========================================================================

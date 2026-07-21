@@ -32,6 +32,7 @@ const emptyForm = {
   price: '', area_sqm: '', rooms: '', bathrooms: '', kitchens: '', living_rooms: '', address: '', description_ar: '',
   is_featured: false, negotiable: true,
   main_image_url: '', extra_images: [] as string[],
+  features: [] as string[],
 };
 
 // ─── Property Modal ───────────────────────────────────────────────────────────
@@ -55,11 +56,22 @@ function PropertyModal({ property, onClose }: { property?: any; onClose: () => v
     negotiable:     property.negotiable ?? true,
     main_image_url: property.main_image_url ?? '',
     extra_images:   (property.media ?? []).map((m: any) => m.url).filter(Boolean) as string[],
+    features:       (property.features ?? []) as string[],
   } : { ...emptyForm });
 
   const [newImageUrl, setNewImageUrl] = useState('');
+  const [newFeature, setNewFeature] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
+
+  const addFeature = () => {
+    const f = newFeature.trim();
+    if (!f || form.features.includes(f)) return;
+    set('features', [...form.features, f]);
+    setNewFeature('');
+  };
+  const removeFeature = (i: number) =>
+    set('features', form.features.filter((_, idx) => idx !== i));
 
   const addImage = () => {
     const url = newImageUrl.trim();
@@ -131,6 +143,7 @@ function PropertyModal({ property, onClose }: { property?: any; onClose: () => v
         ...(form.main_image_url ? [form.main_image_url] : []),
         ...form.extra_images,
       ],
+      features: form.features,
     };
     if (isEdit) updateMut.mutate(payload);
     else createMut.mutate(payload);
@@ -310,7 +323,34 @@ function PropertyModal({ property, onClose }: { property?: any; onClose: () => v
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">الوصف</label>
               <textarea className="input w-full resize-none" rows={3} value={form.description_ar}
                 onChange={(e) => set('description_ar', e.target.value)}
-                placeholder="وصف العقار ومميزاته..." />
+                placeholder="وصف العقار..." />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                المميزات <span className="text-xs font-normal text-gray-400">(مطبخ راكب، تكييف مركزي، قريب من مدرسة...)</span>
+              </label>
+              {form.features.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {form.features.map((f, i) => (
+                    <span key={i} className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 text-xs px-2.5 py-1 rounded-full">
+                      {f}
+                      <button type="button" onClick={() => removeFeature(i)} className="hover:text-blue-900">
+                        <XMarkIcon className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="flex gap-2">
+                <input className="input flex-1 text-sm" value={newFeature}
+                  onChange={(e) => setNewFeature(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addFeature())}
+                  placeholder="أضف ميزة واضغط إدخال..." />
+                <button type="button" onClick={addFeature} className="btn-secondary px-4 text-sm whitespace-nowrap">
+                  + إضافة
+                </button>
+              </div>
             </div>
 
             <div className="flex gap-6">

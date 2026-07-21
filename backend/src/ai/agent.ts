@@ -375,6 +375,40 @@ export const formatPropertyMessage = (property: Property, index: number): string
   return `*${index})* ` + lines.join('\n');
 };
 
+/** Full single-property view — sent when a customer asks about a specific
+ * listing by code or number, so it carries everything the compact list
+ * form intentionally leaves out (description, every feature/amenity). */
+export const formatPropertyDetails = (property: Property): string => {
+  const typeAr: Record<string, string> = {
+    land: 'أرض', apartment: 'شقة', villa: 'فيلا', building: 'عمارة',
+    office: 'مكتب', showroom: 'معرض', warehouse: 'مستودع', farm: 'مزرعة',
+    investment_project: 'مشروع استثماري', other: 'عقار',
+  };
+  const type = typeAr[property.property_type ?? ''] ?? 'عقار';
+  const deal = property.purpose === 'rent' ? 'للإيجار' : 'للبيع';
+  const location = [property.district_name, property.city_name].filter(Boolean).join(' – ');
+
+  const lines: string[] = [`*${type} ${deal}*`];
+  if (location) lines.push(location);
+  if (property.price) lines.push(`السعر: *${Number(property.price).toLocaleString('en-US')} ريال*`);
+  if (property.rooms) lines.push(`${property.rooms} غرف`);
+  if ((property as any).bathrooms) lines.push(`${(property as any).bathrooms} دورات مياه`);
+  if ((property as any).kitchens) lines.push(`${(property as any).kitchens} مطبخ`);
+  if ((property as any).living_rooms) lines.push(`${(property as any).living_rooms} صالة`);
+  if (property.floor_number !== undefined && property.floor_number !== null) {
+    lines.push(property.floor_number === 0 ? 'الدور: الأرضي' : `الدور: ${property.floor_number}`);
+  }
+
+  const features = [...(property.features ?? []), ...((property as any).amenities ?? [])];
+  if (features.length) lines.push('', 'المميزات:', ...features.map((f) => `- ${f}`));
+
+  if (property.description_ar) lines.push('', property.description_ar);
+
+  if (property.code) lines.push('', `الكود: ${property.code}`);
+
+  return lines.join('\n');
+};
+
 export const formatPropertiesResponse = (properties: Property[], searchSummary: string): string => {
   if (!properties.length) {
     return `حالياً ما لقيت عقار بنفس مواصفات ${searchSummary}.\n\nودّي أرشح لك أقرب الخيارات المتاحة، أعرضها عليك؟`;
@@ -427,9 +461,11 @@ const buildContextBlock = (client: Client, properties?: Property[]): string => {
     ctx += properties.slice(0, 5).map((p, i) => {
       const typeAr: Record<string, string> = { land:'أرض', apartment:'شقة', villa:'فيلا', building:'عمارة', office:'مكتب', showroom:'معرض', warehouse:'مستودع', farm:'مزرعة', investment_project:'مشروع استثماري', other:'أخرى' };
       const loc = [p.district_name, p.city_name].filter(Boolean).join(' - ');
-      return `${i+1}. ${typeAr[p.property_type??'']??'عقار'}: ${p.title_ar??p.title} | ${p.price?.toLocaleString('ar-SA')} ريال | ${p.rooms??'؟'} غرف | ${loc} | كود: ${p.code}`;
+      const feats = [...(p.features ?? []), ...((p as any).amenities ?? [])];
+      const featsStr = feats.length ? ` | مميزات: ${feats.join('، ')}` : '';
+      return `${i+1}. ${typeAr[p.property_type??'']??'عقار'}: ${p.title_ar??p.title} | ${p.price?.toLocaleString('ar-SA')} ريال | ${p.rooms??'؟'} غرف | ${loc} | كود: ${p.code}${featsStr}`;
     }).join('\n');
-    ctx += '\n\nمهم: لا تسرد كل العقارات في ردك النصي — اذكر فقط أنك وجدت خيارات مناسبة، القائمة الكاملة ستصل بعدك تلقائياً.';
+    ctx += '\n\nمهم: لا تسرد كل العقارات في ردك النصي — اذكر فقط أنك وجدت خيارات مناسبة، القائمة الكاملة ستصل بعدك تلقائياً. إذا سأل العميل عن ميزة معينة (مطبخ راكب، تكييف، موقف سيارات...) اعتمد فقط على المميزات المذكورة هنا — لا تخترع ولا تفترض ميزة غير مذكورة.';
   }
 
   return ctx;

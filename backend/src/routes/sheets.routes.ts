@@ -52,6 +52,7 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
     const HEADER_HINTS = [
       'العنوان', 'النوع', 'نوع العقار', 'السعر', 'المساحة', 'الغرف', 'عدد الغرف',
       'الحي', 'المدينة', 'الحالة', 'حالة العقار', 'الإيجار', 'الكود', 'رقم العقار',
+      'المطبخ', 'الصالة', 'المميزات',
       'الاسم', 'الجوال', 'البريد', 'الميزانية',
       'title', 'type', 'price', 'area', 'rooms', 'city', 'status', 'name', 'phone',
     ];
@@ -184,6 +185,9 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
         const kitchens = parseInt(String(row['المطبخ'] ?? row['عدد المطابخ'] ?? row['kitchens'] ?? '0')) || null;
         const living_rooms = parseInt(String(row['الصالة'] ?? row['عدد الصالات'] ?? row['living_rooms'] ?? '0')) || null;
 
+        const rawFeatures = String(row['المميزات'] ?? row['features'] ?? '').trim();
+        const features = rawFeatures ? rawFeatures.split(/[,،|]/).map((f) => f.trim()).filter(Boolean) : [];
+
         // floor_number is INTEGER — map Arabic ordinals, ignore non-numeric ("أرضي+علوي")
         const rawFloor = String(row['الدور'] ?? row['floor'] ?? '').trim();
         const floorMap: Record<string, number> = {
@@ -242,6 +246,9 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
           bathrooms,
           kitchens,
           living_rooms,
+          // JSONB column — a bare JS array sent through node-postgres is read
+          // as a Postgres array literal, not JSON, and the jsonb column rejects it.
+          features: JSON.stringify(features),
           floor_number,
           price,
           currency: 'SAR',

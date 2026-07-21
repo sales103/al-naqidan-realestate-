@@ -151,14 +151,27 @@ export class PropertyService {
       .leftJoin('cities as c', 'p.city_id', 'c.id')
       .leftJoin('districts as d', 'p.district_id', 'd.id')
       .select('p.*', 'c.name_ar as city_name', 'd.name_ar as district_name')
-      .where('p.code', code)
+      .whereRaw('UPPER(p.code) = UPPER(?)', [code])
       .first() as Property | undefined;
 
     return property ?? null;
   }
 
+  // features/amenities/nearby_places are JSONB — node-postgres sends a bare JS
+  // array as a Postgres array literal, not JSON, which the jsonb column then
+  // rejects. `tags` is a real TEXT[] column and must stay a plain array.
+  private static readonly JSONB_ARRAY_COLUMNS = ['features', 'amenities', 'nearby_places'];
+
+  private stringifyJsonbArrays<T extends Record<string, any>>(data: T): T {
+    const out: Record<string, any> = { ...data };
+    for (const col of PropertyService.JSONB_ARRAY_COLUMNS) {
+      if (Array.isArray(out[col])) out[col] = JSON.stringify(out[col]);
+    }
+    return out as T;
+  }
+
   async create(data: Omit<Property, 'id' | 'code' | 'created_at' | 'updated_at' | 'view_count' | 'inquiry_count'>): Promise<Property> {
-    const payload = await this.filterToExistingColumns(data);
+    const payload = await this.filterToExistingColumns(this.stringifyJsonbArrays(data));
     const [property] = await this.db('properties').insert(payload).returning('*') as Property[];
     if (!property) throw new Error('Failed to create property');
     await cacheDel(cacheKeys.dashboardStats());
@@ -166,7 +179,7 @@ export class PropertyService {
   }
 
   async update(id: string, data: Partial<Property>): Promise<Property> {
-    const payload = await this.filterToExistingColumns({ ...data, updated_at: new Date() });
+    const payload = await this.filterToExistingColumns(this.stringifyJsonbArrays({ ...data, updated_at: new Date() }));
     const [property] = await this.db('properties')
       .where('id', id)
       .update(payload)
