@@ -1,4 +1,4 @@
-import { getDatabase } from '../database/connection.js';
+﻿import { getDatabase } from '../database/connection.js';
 import { cacheGet, cacheSet, cacheKeys } from '../database/redis.js';
 import { logger } from '../config/logger.js';
 import { config } from '../config/index.js';
@@ -283,11 +283,7 @@ export class ConversationService {
         const lastWarned = this.rateLimitWarnedAt.get(phone) ?? 0;
         if (Date.now() - lastWarned > RATE_LIMIT_WINDOW_MS) {
           this.rateLimitWarnedAt.set(phone, Date.now());
-          await whatsappService.sendText(
-            client.phone,
-            'وصلتني رسائل كثيرة منك خلال وقت قصير. أعطني لحظة وبرد عليك.',
-            this.waInstance(conversation),
-          ).catch(() => {});
+          await this.reply(client, conversation, 'وصلتني رسائل كثيرة منك خلال وقت قصير. أعطني لحظة وبرد عليك.').catch(() => {});
         }
         return;
       }
@@ -325,6 +321,19 @@ export class ConversationService {
     return (conversation as any).wa_instance ?? config.whatsapp.instanceName;
   }
 
+  /** Send text to the client AND persist it in the messages table (fire-and-forget save). */
+  private async reply(
+    client: Client, conversation: Conversation, text: string, isFromAI = true,
+  ): Promise<void> {
+    const msgId = await whatsappService.sendText(client.phone, text, this.waInstance(conversation));
+    this.saveMessage({
+      conversation_id: conversation.id,
+      whatsapp_message_id: msgId,
+      direction: 'outbound', message_type: 'text', status: 'sent',
+      content: text, is_from_ai: isFromAI,
+    }).catch((e: any) => logger.warn('outbound save failed', { error: e?.message }));
+  }
+
   // ===========================================================================
   // Flow Router
   // ===========================================================================
@@ -340,7 +349,7 @@ export class ConversationService {
     const normText = normalizeAr((message.content ?? ''));
     if (normText && RESTART.some(w => normText.includes(normalizeAr(w)))) {
       await this.saveFlowContext(conversation.id, { state: 'welcome' });
-      await whatsappService.sendText(client.phone, 'تمام، نبدأ من جديد', this.waInstance(conversation));
+      await this.reply(client, conversation, 'تمام، نبدأ من جديد');
       await sleep(400);
       await this.stepWelcome(client, conversation, { state: 'welcome' }, true);
       return;
@@ -441,6 +450,13 @@ export class ConversationService {
       options.map(o => ({ id: o.id, title: o.title })),
       this.waInstance(conversation),
     );
+    // Save the menu as a text message so it appears in the dashboard conversation view.
+    const menuText = `${title}\n${body}\n${options.map((o, i) => `${i + 1}. ${o.title}`).join('\n')}`;
+    this.saveMessage({
+      conversation_id: conversation.id,
+      direction: 'outbound', message_type: 'text', status: 'sent',
+      content: menuText, is_from_ai: true,
+    }).catch((e: any) => logger.warn('menu save failed', { error: e?.message }));
     await this.saveFlowContext(conversation.id, { ...ctx, ...extra, state: nextState, pending: options });
   }
 
@@ -483,11 +499,7 @@ export class ConversationService {
     const options = ctx.pending ?? [];
     if (options.length === 0) return;
     const menu = options.map((o, i) => `${i + 1}. ${o.title}`).join('\n');
-    await whatsappService.sendText(
-      client.phone,
-      `لم أفهم اختيارك\nاختر من القائمة أو أرسل الرقم:\n\n${menu}`,
-      this.waInstance(conversation),
-    );
+    await this.reply(client, conversation, `لم أفهم اختيارك\nاختر من القائمة أو أرسل الرقم:\n\n${menu}`);
   }
 
   // ===========================================================================
@@ -512,7 +524,7 @@ export class ConversationService {
         ...ctx, state: 'complaint', pending: undefined,
         complaint: { level, category },
       });
-      await whatsappService.sendText(client.phone, acknowledgement(level), inst);
+      await this.reply(client, conversation, acknowledgement(level));
 
       // Very angry: do not interrogate, escalate straight away.
       if (level >= 4) {
@@ -530,7 +542,7 @@ export class ConversationService {
     const question = nextQuestion(known, category);
     if (question) {
       await this.saveFlowContext(conversation.id, { ...ctx, state: 'complaint', complaint: known });
-      await whatsappService.sendText(client.phone, question, inst);
+      await this.reply(client, conversation, question);
       return;
     }
 
@@ -563,7 +575,7 @@ export class ConversationService {
     await this.saveFlowContext(conversation.id, {
       state: 'escalated', complaint: data,
     });
-    await whatsappService.sendText(client.phone, handoverLine(data.level), inst);
+    await this.reply(client, conversation, handoverLine(data.level));
     logger.info('complaint escalated', { clientId: client.id, level: data.level, category: data.category });
   }
 
@@ -592,20 +604,14 @@ export class ConversationService {
       const parts = [lastLabel, lastPurpose ? `لل${lastPurpose}` : undefined, budgetStr ? `بميزانية ${budgetStr}` : undefined].filter(Boolean);
       const lastRequest = parts.join(' ');
 
-      await whatsappService.sendText(
-        client.phone,
+      await this.reply(client, conversation,
         lastRequest
           ? `أهلاً بعودتك${client.full_name ? ' ' + client.full_name : ''}.\nآخر مرة كنت تدور على ${lastRequest} — نفس الطلب، أو تغيّر شيء؟`
           : `أهلاً بعودتك${client.full_name ? ' ' + client.full_name : ''}.\nكيف أقدر أساعدك اليوم؟`,
-        this.waInstance(conversation),
       );
       await sleep(500);
     } else {
-      await whatsappService.sendText(
-        client.phone,
-        `حياك الله\nمعك مساعد *مكتب عبدالحكيم النقيدان العقاري*.`,
-        this.waInstance(conversation),
-      );
+      await this.reply(client, conversation, `حياك الله\nمعك مساعد *مكتب عبدالحكيم النقيدان العقاري*.`);
       await sleep(500);
     }
 
@@ -637,21 +643,13 @@ export class ConversationService {
 
     if (choice === 'intent_sell') {
       await this.saveFlowContext(conversation.id, { ...ctx, state: 'sell_details', deal_kind: 'sell', pending: undefined });
-      await whatsappService.sendText(
-        client.phone,
-        'تمام، عشان نساعدك في بيع عقارك أرسل لنا في رسالة واحدة:\nنوع العقار، الحي، المساحة، السعر المطلوب، ووصف مختصر.',
-        this.waInstance(conversation),
-      );
+      await this.reply(client, conversation, 'تمام، عشان نساعدك في بيع عقارك أرسل لنا في رسالة واحدة:\nنوع العقار، الحي، المساحة، السعر المطلوب، ووصف مختصر.');
       return;
     }
 
     if (choice === 'intent_manage') {
       await this.saveFlowContext(conversation.id, { ...ctx, state: 'manage_details', deal_kind: 'manage', pending: undefined });
-      await whatsappService.sendText(
-        client.phone,
-        'يسعدنا إدارة عقارك. أرسل لنا في رسالة واحدة:\nنوع العقار، الحي، عدد الوحدات، والوضع الحالي (مؤجر أم شاغر)، وأي تفاصيل تهمك.',
-        this.waInstance(conversation),
-      );
+      await this.reply(client, conversation, 'يسعدنا إدارة عقارك. أرسل لنا في رسالة واحدة:\nنوع العقار، الحي، عدد الوحدات، والوضع الحالي (مؤجر أم شاغر)، وأي تفاصيل تهمك.');
       return;
     }
 
@@ -776,11 +774,7 @@ export class ConversationService {
     const purposeAr = purpose === 'rent' ? 'الإيجار' : 'الشراء';
     message.content = `أبحث عن ${typeInfo?.label ?? ctx.property_type ?? 'عقار'} لـ${purposeAr} في بريدة`;
 
-    await whatsappService.sendText(
-      client.phone,
-      `${ack()}\n\n${typeInfo?.label ?? 'عقار'}\n\nلحظة أشوف لك أفضل المتاح`,
-      this.waInstance(conversation),
-    );
+    await this.reply(client, conversation, `${ack()}\n\n${typeInfo?.label ?? 'عقار'}\n\nلحظة أشوف لك أفضل المتاح`);
     await sleep(700);
 
     await this.processWithAI(message, client, conversation, newCtx, undefined);
@@ -811,11 +805,7 @@ export class ConversationService {
     const details = text.trim();
 
     if (details.length < 5) {
-      await whatsappService.sendText(
-        client.phone,
-        'أرسل تفاصيل العقار من فضلك (النوع، الحي، المساحة، السعر، ووصف مختصر) في رسالة واحدة.',
-        inst,
-      );
+      await this.reply(client, conversation, 'أرسل تفاصيل العقار من فضلك (النوع، الحي، المساحة، السعر، ووصف مختصر) في رسالة واحدة.');
       return;
     }
 
@@ -827,11 +817,7 @@ export class ConversationService {
       .catch(() => {});
     await this.notifyAgent(client, conversation, `${label}:\n${details}`);
 
-    await whatsappService.sendText(
-      client.phone,
-      `${ack()}، وصلتنا تفاصيل عقارك.\nبيتواصل معك أحد مستشارينا لإكمال الإجراءات.`,
-      inst,
-    );
+    await this.reply(client, conversation, `${ack()}، وصلتنا تفاصيل عقارك.\nبيتواصل معك أحد مستشارينا لإكمال الإجراءات.`);
   }
 
   // ===========================================================================
@@ -1051,6 +1037,12 @@ export class ConversationService {
         await whatsappService.sendProperties(
           client.phone, properties, this.buildSearchSummary(ctx, {}), this.waInstance(conversation),
         );
+        this.saveMessage({
+          conversation_id: conversation.id,
+          direction: 'outbound', message_type: 'text', status: 'sent',
+          content: `[تم إرسال ${properties.length} عقار] ${this.buildSearchSummary(ctx, {})}`,
+          is_from_ai: true,
+        }).catch(() => {});
         await this.saveFlowContext(conversation.id, {
           ...ctx,
           shown_property_ids: [...shownIds, ...properties.map((p) => p.id)],
@@ -1058,30 +1050,18 @@ export class ConversationService {
           booking_prompted: true,
         });
         await sleep(400);
-        await whatsappService.sendText(
-          client.phone,
-          'هل تود ترتيب موعد معاينة لأي منها؟ اكتب رقم العقار أو اسأل عن أي تفاصيل',
-          this.waInstance(conversation),
-        );
+        await this.reply(client, conversation, 'هل تود ترتيب موعد معاينة لأي منها؟ اكتب رقم العقار أو اسأل عن أي تفاصيل');
         return;
       }
 
-      await whatsappService.sendText(
-        client.phone,
-        'لم أجد حالياً عقاراً مطابقاً لطلبك تماماً.\n\nسجّلت طلبك وسيتواصل معك أحد مستشارينا بأقرب الخيارات المتاحة.\n\n' + this.handoffNote(),
-        this.waInstance(conversation),
-      );
+      await this.reply(client, conversation, 'لم أجد حالياً عقاراً مطابقاً لطلبك تماماً.\n\nسجّلت طلبك وسيتواصل معك أحد مستشارينا بأقرب الخيارات المتاحة.\n\n' + this.handoffNote());
       // Notify the team, but keep the bot listening: an empty result is not a
       // reason to go silent on the customer for the rest of the conversation.
       await this.notifyAgent(client, conversation, 'لا توجد عقارات مطابقة — يحتاج متابعة بشرية');
     } catch (e: any) {
       recordError('searchWithoutAI', e);
       logger.error('searchWithoutAI failed', { clientId: client.id, error: e?.message });
-      await whatsappService.sendText(
-        client.phone,
-        'شكراً لتواصلك\nسيتواصل معك أحد مستشارينا لمساعدتك.\n\n' + this.handoffNote(),
-        this.waInstance(conversation),
-      );
+      await this.reply(client, conversation, 'شكراً لتواصلك\nسيتواصل معك أحد مستشارينا لمساعدتك.\n\n' + this.handoffNote());
     }
   }
 
@@ -1236,11 +1216,7 @@ export class ConversationService {
     if (choice === 'slot_other') {
       await this.saveFlowContext(conversation.id, { ...ctx, state: 'escalated', pending: undefined });
       await this.db('conversations').where('id', conversation.id).update({ ai_handoff_requested: true, updated_at: new Date() });
-      await whatsappService.sendText(
-        client.phone,
-        'تمام، دوّن الوقت اللي يناسبك وبيتواصل معك أحد مستشارينا لتثبيت الموعد مباشرة.',
-        inst,
-      );
+      await this.reply(client, conversation, 'تمام، دوّن الوقت اللي يناسبك وبيتواصل معك أحد مستشارينا لتثبيت الموعد مباشرة.');
       await this.notifyAgent(client, conversation, `العميل يطلب موعد معاينة بوقت مخصص: "${text}"`);
       return;
     }
@@ -1269,11 +1245,7 @@ export class ConversationService {
       await this.saveFlowContext(conversation.id, { ...ctx, state: 'ai', booking: undefined, pending: undefined });
     } catch (e: any) {
       logger.error('appointment booking failed', { clientId: client.id, error: e?.message });
-      await whatsappService.sendText(
-        client.phone,
-        'صار خطأ تقني وأنا أحاول أثبت الموعد، وبيتواصل معك أحد مستشارينا لتأكيده يدوياً.',
-        inst,
-      );
+      await this.reply(client, conversation, 'صار خطأ تقني وأنا أحاول أثبت الموعد، وبيتواصل معك أحد مستشارينا لتأكيده يدوياً.');
       await this.notifyAgent(client, conversation, 'فشل حجز موعد معاينة آلياً — يحتاج تثبيت يدوي');
       await this.saveFlowContext(conversation.id, { ...ctx, state: 'ai', booking: undefined, pending: undefined });
     }
@@ -1306,15 +1278,11 @@ export class ConversationService {
     }
 
     if (!property) {
-      await whatsappService.sendText(
-        client.phone,
-        'اكتب كود العقار، أو رقمه من آخر قائمة أرسلتها لك، عشان أعرض لك التفاصيل الكاملة.',
-        inst,
-      );
+      await this.reply(client, conversation, 'اكتب كود العقار، أو رقمه من آخر قائمة أرسلتها لك، عشان أعرض لك التفاصيل الكاملة.');
       return;
     }
 
-    await whatsappService.sendText(client.phone, formatPropertyDetails(property), inst);
+    await this.reply(client, conversation, formatPropertyDetails(property));
 
     // findByCode doesn't join property_media, and a "details" request is the
     // one moment the customer explicitly wants everything — not just the
@@ -1354,11 +1322,7 @@ export class ConversationService {
     const picks = numbers.filter((n) => n >= 1 && n <= shown.length);
 
     if (picks.length < 2) {
-      await whatsappService.sendText(
-        client.phone,
-        `اكتب أرقام العقارات اللي تبي تقارن بينها من آخر قائمة أرسلتها لك، مثل: قارن 1 و3 (من 1 إلى ${shown.length}).`,
-        inst,
-      );
+      await this.reply(client, conversation, `اكتب أرقام العقارات اللي تبي تقارن بينها من آخر قائمة أرسلتها لك، مثل: قارن 1 و3 (من 1 إلى ${shown.length}).`);
       return;
     }
 
@@ -1369,15 +1333,11 @@ export class ConversationService {
       .filter((x): x is { n: number; p: NonNullable<typeof x.p> } => Boolean(x.p));
 
     if (pairs.length < 2) {
-      await whatsappService.sendText(
-        client.phone,
-        'تعذر إيجاد بعض العقارات المطلوبة للمقارنة، جرّب أرقاماً من آخر قائمة أرسلتها لك.',
-        inst,
-      );
+      await this.reply(client, conversation, 'تعذر إيجاد بعض العقارات المطلوبة للمقارنة، جرّب أرقاماً من آخر قائمة أرسلتها لك.');
       return;
     }
 
-    await whatsappService.sendText(client.phone, this.buildComparisonMessage(pairs), inst);
+    await this.reply(client, conversation, this.buildComparisonMessage(pairs));
   }
 
   private buildComparisonMessage(pairs: { n: number; p: any }[]): string {

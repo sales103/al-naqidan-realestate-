@@ -20,6 +20,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [tsToken, setTsToken] = useState('');
+  const [tsKey, setTsKey] = useState(0);
   const navigate = useNavigate();
   const setAuth = useAuthStore((s) => s.setAuth);
 

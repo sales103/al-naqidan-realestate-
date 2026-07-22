@@ -8,8 +8,14 @@ export const handleWhatsAppWebhook = async (req: Request, res: Response, next: N
     // Verify the request comes from our Evolution API instance
     const apikey = req.headers['apikey'] as string | undefined;
     const expectedKey = process.env['EVOLUTION_API_KEY'];
+
+    // Log the incoming key for debugging (first 8 chars only)
     if (expectedKey && apikey !== expectedKey) {
-      logger.warn('Webhook rejected: invalid apikey', { ip: req.ip });
+      logger.warn('Webhook rejected: invalid apikey', {
+        ip: req.ip,
+        received: apikey ? apikey.slice(0, 8) + '...' : 'none',
+        expected_prefix: expectedKey ? expectedKey.slice(0, 8) + '...' : 'not-set',
+      });
       res.status(401).json({ success: false, error: 'Unauthorized' });
       return;
     }

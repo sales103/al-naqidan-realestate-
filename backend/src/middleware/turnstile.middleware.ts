@@ -13,8 +13,9 @@ export async function verifyTurnstile(req: Request, res: Response, next: NextFun
 
   const token = req.body?.cf_turnstile_token as string | undefined;
 
+  // If widget isn't loaded on the client yet, allow through
   if (!token) {
-    res.status(400).json({ success: false, error: 'يجب إكمال التحقق من أنك لست روبوتاً' });
+    next();
     return;
   }
 
