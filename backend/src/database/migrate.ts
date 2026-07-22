@@ -1,0 +1,88 @@
+import { getDatabase, initDatabase, closeDatabase } from './connection.js';
+import { logger } from '../config/logger.js';
+
+/**
+ * Incremental schema migrations, applied automatically on every boot.
+ *
+ * Why inline SQL instead of reading .sql files: this project's deploy has
+ * repeatedly been bitten by path/packaging issues (the Arabic-named repo root,
+ * the backend building from its own subdirectory, .sql files not landing in
+ * dist). Embedding the SQL in the compiled bundle removes every one of those
+ * failure modes — the migration is always exactly where the runtime looks.
+ *
+ * Rules for anything added here:
+ *  - Start numbering at 003. The baseline schema (001) and the reconcile pass
+ *    (002) were applied to the live database by hand before this runner
+ *    existed; they are NOT repeated here.
+ *  - Every statement must be idempotent (IF NOT EXISTS / IF EXISTS), so a
+ *    migration is harmless even if it partially ran before, and a fresh column
+ *    add can never take the service down.
+ *  - Append only. Never edit or reorder an already-shipped migration — add a
+ *    new one instead.
+ */
+const MIGRATIONS: { name: string; sql: string }[] = [
+  {
+    name: '003_add_kitchen_living_room',
+    sql: `
+      ALTER TABLE properties ADD COLUMN IF NOT EXISTS kitchens INTEGER;
+      ALTER TABLE properties ADD COLUMN IF NOT EXISTS living_rooms INTEGER;
+    `,
+  },
+];
+
+async function ensureMigrationsTable(): Promise<void> {
+  const db = getDatabase();
+  await db.raw(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      name        VARCHAR(255) PRIMARY KEY,
+      applied_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+}
+
+/**
+ * Applies every migration not yet recorded. Safe to call on every startup.
+ * A failure in one migration is logged and rethrown so it's visible, but the
+ * caller decides whether to keep the service up (see bootstrap) — a bad
+ * migration shouldn't necessarily take down an otherwise healthy deploy.
+ */
+export async function runMigrations(): Promise<{ applied: string[] }> {
+  const db = getDatabase();
+  await ensureMigrationsTable();
+
+  const doneRows = await db('schema_migrations').select('name');
+  const done = new Set<string>(doneRows.map((r: any) => r.name));
+
+  const applied: string[] = [];
+  for (const migration of MIGRATIONS) {
+    if (done.has(migration.name)) continue;
+    logger.info(`Applying migration: ${migration.name}`);
+    await db.transaction(async (trx) => {
+      await trx.raw(migration.sql);
+      await trx('schema_migrations').insert({ name: migration.name });
+    });
+    applied.push(migration.name);
+    logger.info(`Migration applied: ${migration.name}`);
+  }
+
+  if (applied.length === 0) logger.info('No pending migrations');
+  else logger.info(`Applied ${applied.length} migration(s): ${applied.join(', ')}`);
+
+  return { applied };
+}
+
+// Allow running standalone: `npm run migrate` → node dist/database/migrate.js
+// (CommonJS build, so guard on require.main rather than import.meta.)
+if (require.main === module) {
+  void (async () => {
+    await initDatabase();
+    try {
+      await runMigrations();
+    } catch (e) {
+      logger.error('Migration run failed', { error: (e as any)?.message });
+      process.exitCode = 1;
+    } finally {
+      await closeDatabase();
+    }
+  })();
+}

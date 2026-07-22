@@ -3,6 +3,7 @@ import { authenticate } from '../middleware/auth.middleware.js';
 import { getDatabase } from '../database/connection.js';
 import multer from 'multer';
 import * as XLSX from 'xlsx';
+import { parseLatLngFromMapsUrl } from '../utils/geo.js';
 
 const router = Router();
 router.use(authenticate);
@@ -188,6 +189,9 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
         const rawFeatures = String(row['المميزات'] ?? row['features'] ?? '').trim();
         const features = rawFeatures ? rawFeatures.split(/[,،|]/).map((f) => f.trim()).filter(Boolean) : [];
 
+        const google_maps_url = String(row['الموقع'] ?? row['رابط الموقع'] ?? row['الخريطة'] ?? row['google_maps_url'] ?? '').trim() || null;
+        const coords = parseLatLngFromMapsUrl(google_maps_url);
+
         // floor_number is INTEGER — map Arabic ordinals, ignore non-numeric ("أرضي+علوي")
         const rawFloor = String(row['الدور'] ?? row['floor'] ?? '').trim();
         const floorMap: Record<string, number> = {
@@ -249,6 +253,9 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
           // JSONB column — a bare JS array sent through node-postgres is read
           // as a Postgres array literal, not JSON, and the jsonb column rejects it.
           features: JSON.stringify(features),
+          google_maps_url,
+          latitude: coords?.lat ?? null,
+          longitude: coords?.lng ?? null,
           floor_number,
           price,
           currency: 'SAR',

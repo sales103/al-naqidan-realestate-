@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { propertyService } from '../services/property.service.js';
 import { getDatabase } from '../database/connection.js';
 import { AppError } from '../middleware/error.middleware.js';
+import { parseLatLngFromMapsUrl } from '../utils/geo.js';
 import type { PropertySearchParams } from '../types/index.js';
 
 const searchSchema = z.object({
@@ -124,8 +125,13 @@ export const getProperty = async (req: Request, res: Response, next: NextFunctio
 export const createProperty = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { main_image_url, images, ...rest } = createSchema.parse(req.body);
+    // Derive coordinates from a pasted Maps link so the bot can send a real
+    // location pin — only when the user didn't enter lat/lng directly.
+    const coords = (rest.latitude == null || rest.longitude == null)
+      ? parseLatLngFromMapsUrl(rest.google_maps_url) : undefined;
     const property = await propertyService.create({
       ...rest,
+      ...(coords ? { latitude: coords.lat, longitude: coords.lng } : {}),
       main_image_url: main_image_url || undefined,
       created_by: req.user!.user_id,
       currency: 'SAR',
@@ -146,8 +152,11 @@ export const createProperty = async (req: Request, res: Response, next: NextFunc
 export const updateProperty = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { main_image_url, images, ...rest } = createSchema.partial().parse(req.body);
+    const coords = (rest.google_maps_url && rest.latitude == null && rest.longitude == null)
+      ? parseLatLngFromMapsUrl(rest.google_maps_url) : undefined;
     const property = await propertyService.update(req.params['id']!, {
       ...rest,
+      ...(coords ? { latitude: coords.lat, longitude: coords.lng } : {}),
       ...(main_image_url !== undefined ? { main_image_url: main_image_url || undefined } : {}),
     } as any);
 

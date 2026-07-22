@@ -14,6 +14,7 @@ import { register as metricsRegister } from 'prom-client';
 import { config } from './config/index.js';
 import { logger } from './config/logger.js';
 import { initDatabase } from './database/connection.js';
+import { runMigrations } from './database/migrate.js';
 import { initRedis } from './database/redis.js';
 import routes from './routes/index.js';
 import { errorHandler, notFound } from './middleware/error.middleware.js';
@@ -148,6 +149,15 @@ const bootstrap = async (): Promise<void> => {
     }
 
     await initDatabase();
+    // Apply any pending schema migrations before serving traffic. A failure
+    // here is logged but non-fatal: an idempotent column-add going wrong
+    // shouldn't take down an otherwise healthy deploy, and the app already
+    // tolerates missing columns defensively (see propertyService).
+    try {
+      await runMigrations();
+    } catch (e) {
+      logger.error('Migrations failed on boot — continuing to serve', { error: (e as any)?.message });
+    }
     await initRedis();
     startScheduler();
 

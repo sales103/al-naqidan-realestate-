@@ -29,7 +29,7 @@ const statusConfig: Record<string, { label: string; color: string; dot: string }
 
 const emptyForm = {
   title: '', property_type: 'apartment', purpose: 'sale', status: 'available',
-  price: '', area_sqm: '', rooms: '', bathrooms: '', kitchens: '', living_rooms: '', address: '', description_ar: '',
+  price: '', area_sqm: '', rooms: '', bathrooms: '', kitchens: '', living_rooms: '', address: '', google_maps_url: '', description_ar: '',
   is_featured: false, negotiable: true,
   main_image_url: '', extra_images: [] as string[],
   features: [] as string[],
@@ -51,6 +51,7 @@ function PropertyModal({ property, onClose }: { property?: any; onClose: () => v
     kitchens:       property.kitchens ?? '',
     living_rooms:   property.living_rooms ?? '',
     address:        property.address ?? '',
+    google_maps_url: property.google_maps_url ?? '',
     description_ar: property.description_ar ?? '',
     is_featured:    property.is_featured ?? false,
     negotiable:     property.negotiable ?? true,
@@ -140,6 +141,7 @@ function PropertyModal({ property, onClose }: { property?: any; onClose: () => v
       kitchens:     parseInt(String(form.kitchens))     || undefined,
       living_rooms: parseInt(String(form.living_rooms)) || undefined,
       address:        form.address        || undefined,
+      google_maps_url: form.google_maps_url || undefined,
       description_ar: form.description_ar || undefined,
       is_featured: form.is_featured,
       negotiable:  form.negotiable,
@@ -330,6 +332,15 @@ function PropertyModal({ property, onClose }: { property?: any; onClose: () => v
               <input className="input w-full" value={form.address}
                 onChange={(e) => set('address', e.target.value)}
                 placeholder="مثال: حي النرجس، الرياض" />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                رابط الموقع على خرائط جوجل <span className="text-xs font-normal text-gray-400">(اختياري — يُرسله البوت كموقع للعميل)</span>
+              </label>
+              <input className="input w-full text-sm" dir="ltr" value={form.google_maps_url}
+                onChange={(e) => set('google_maps_url', e.target.value)}
+                placeholder="https://maps.google.com/?q=26.35,43.98" />
             </div>
 
             <div>

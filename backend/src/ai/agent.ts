@@ -406,6 +406,12 @@ export const formatPropertyDetails = (property: Property): string => {
 
   if (property.description_ar) lines.push('', property.description_ar);
 
+  // A pinned location follows as a separate WhatsApp message when coordinates
+  // exist; when only a Maps link is on file, give it here as clickable text.
+  if (property.google_maps_url && !(property.latitude && property.longitude)) {
+    lines.push('', `الموقع على الخريطة: ${property.google_maps_url}`);
+  }
+
   if (property.code) lines.push('', `الكود: ${property.code}`);
 
   return lines.join('\n');

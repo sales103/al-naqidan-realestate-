@@ -126,7 +126,11 @@ export class WhatsAppService {
     for (const prop of properties) {
       if (prop.main_image_url) {
         try {
-          const caption = `${prop.title_ar ?? prop.title}\n${prop.district_name ?? ''} - ${prop.city_name ?? ''}\n${prop.price?.toLocaleString('ar-SA') ?? ''} ريال\n${prop.code}`;
+          // Include the Maps link in the caption only when there are no
+          // coordinates to send as a real pin below (avoids duplicating it).
+          const mapsLine = prop.google_maps_url && !(prop.latitude && prop.longitude)
+            ? `\nالموقع: ${prop.google_maps_url}` : '';
+          const caption = `${prop.title_ar ?? prop.title}\n${prop.district_name ?? ''} - ${prop.city_name ?? ''}\n${prop.price?.toLocaleString('ar-SA') ?? ''} ريال\n${prop.code}${mapsLine}`;
           await this.sendImage(to, prop.main_image_url, caption, instance);
           await this.delay(500);
         } catch (error: any) {
