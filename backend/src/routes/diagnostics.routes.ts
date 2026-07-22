@@ -49,7 +49,6 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
     out.checks.ai = {
       row_exists: Boolean(row),
       key_configured: Boolean(v.openai_key || v.api_key),
-      key_prefix: v.openai_key ? String(v.openai_key).slice(0, 4) : null,
       model: v.model ?? null,
       base_url: v.base_url ?? null,
     };

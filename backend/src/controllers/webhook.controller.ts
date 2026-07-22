@@ -5,6 +5,15 @@ import type { WhatsAppWebhookPayload } from '../types/index.js';
 
 export const handleWhatsAppWebhook = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
+    // Verify the request comes from our Evolution API instance
+    const apikey = req.headers['apikey'] as string | undefined;
+    const expectedKey = process.env['EVOLUTION_API_KEY'];
+    if (expectedKey && apikey !== expectedKey) {
+      logger.warn('Webhook rejected: invalid apikey', { ip: req.ip });
+      res.status(401).json({ success: false, error: 'Unauthorized' });
+      return;
+    }
+
     // Respond immediately to prevent timeout
     res.status(200).json({ success: true });
 

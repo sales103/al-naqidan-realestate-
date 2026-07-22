@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { config } from '../config/index.js';
 import type { AuthPayload, UserRole } from '../types/index.js';
 
@@ -35,11 +36,34 @@ export const authorize = (...roles: UserRole[]) => {
 };
 
 export const verifyWebhook = (req: Request, res: Response, next: NextFunction): void => {
+  const secret = config.auth.webhookSecret;
   const signature = req.headers['x-hub-signature-256'] as string | undefined;
-  if (!signature && config.app.isProduction) {
+
+  // Skip verification if no secret is configured (dev only)
+  if (!secret || secret === 'webhook-secret') {
+    if (config.app.isProduction) {
+      res.status(401).json({ success: false, error: 'Webhook secret not configured' });
+      return;
+    }
+    next();
+    return;
+  }
+
+  if (!signature) {
     res.status(401).json({ success: false, error: 'Missing webhook signature' });
     return;
   }
+
+  const body = JSON.stringify(req.body);
+  const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(body).digest('hex');
+  const sigBuffer = Buffer.from(signature);
+  const expBuffer = Buffer.from(expected);
+
+  if (sigBuffer.length !== expBuffer.length || !crypto.timingSafeEqual(sigBuffer, expBuffer)) {
+    res.status(401).json({ success: false, error: 'Invalid webhook signature' });
+    return;
+  }
+
   next();
 };
 
