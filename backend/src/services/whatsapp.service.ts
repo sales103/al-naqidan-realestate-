@@ -32,6 +32,34 @@ export class WhatsAppService {
     }
   }
 
+  // Evolution v2 signs each webhook with the *instance* token (its hash),
+  // not the global API key, so the webhook handler needs the full set of
+  // valid instance tokens to authenticate an incoming call. Cached for a
+  // few minutes so we don't hit Evolution on every single webhook.
+  private instanceTokens: { at: number; tokens: Set<string> } = { at: 0, tokens: new Set() };
+
+  /** Every per-instance token Evolution knows about (cached ~5 min). */
+  async validInstanceTokens(): Promise<Set<string>> {
+    const FRESH_MS = 5 * 60 * 1000;
+    if (Date.now() - this.instanceTokens.at < FRESH_MS && this.instanceTokens.tokens.size > 0) {
+      return this.instanceTokens.tokens;
+    }
+    try {
+      const r = await this.client.get('instance/fetchInstances');
+      const list: any[] = r.data ?? [];
+      const tokens = new Set<string>();
+      for (const i of list) {
+        const tok = i.token ?? i.hash ?? i.instance?.token ?? i.instance?.hash ?? i.Auth?.token;
+        if (typeof tok === 'string' && tok) tokens.add(tok);
+      }
+      if (tokens.size > 0) this.instanceTokens = { at: Date.now(), tokens };
+      return this.instanceTokens.tokens;
+    } catch (e: any) {
+      logger.warn('validInstanceTokens fetch failed', { error: e?.message });
+      return this.instanceTokens.tokens; // fall back to whatever we last cached
+    }
+  }
+
   /**
    * Send text, falling back to a connected instance.
    * The same WhatsApp account can be attached to several instances and they
