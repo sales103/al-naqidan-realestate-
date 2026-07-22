@@ -108,6 +108,7 @@ export const config = {
     corsOrigins: optionalEnv('CORS_ORIGINS', 'http://localhost:5173').split(','),
     rateLimitWindowMs: parseInt(optionalEnv('RATE_LIMIT_WINDOW_MS', '900000'), 10),
     rateLimitMaxRequests: parseInt(optionalEnv('RATE_LIMIT_MAX_REQUESTS', '100'), 10),
+    turnstileSecret: optionalEnv('TURNSTILE_SECRET_KEY', ''),
   },
 
   logging: {

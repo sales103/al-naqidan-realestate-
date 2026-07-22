@@ -1,4 +1,5 @@
 ﻿import { useState, useRef } from 'react';
+import TurnstileWidget from '../components/TurnstileWidget.tsx';
 import { Link } from 'react-router-dom';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
@@ -26,6 +27,7 @@ export default function RegisterPage() {
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [verifiedToken, setVerifiedToken] = useState('');
   const [loading, setLoading] = useState(false);
+  const [tsToken, setTsToken] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [countdown, setCountdown] = useState(0);
@@ -37,7 +39,7 @@ export default function RegisterPage() {
   const onSendOtp = async (data: EmailForm) => {
     setLoading(true);
     try {
-      await api.post('/auth/send-otp', { email: data.email, purpose: 'register' });
+      await api.post('/auth/send-otp', { email: data.email, purpose: 'register', cf_turnstile_token: tsToken });
       setEmail(data.email);
       setStep('otp');
       startCountdown();
@@ -192,6 +194,8 @@ export default function RegisterPage() {
                 )}
                 <p className="text-gray-400 text-xs mt-1">سنرسل رمز تحقق لهذا البريد</p>
               </div>
+              <TurnstileWidget onToken={setTsToken} onExpire={() => setTsToken('')} />
+
               <button type="submit" disabled={loading}
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
                 {loading ? <><svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>جاري الإرسال...</> : 'إرسال رمز التحقق'}

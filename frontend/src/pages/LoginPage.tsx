@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import { BuildingOfficeIcon, EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
 import { authApi } from '../services/api.ts';
 import { useAuthStore } from '../store/auth.store.ts';
+import TurnstileWidget from '../components/TurnstileWidget.tsx';
 
 const schema = z.object({
   email: z.string().email('بريد إلكتروني غير صحيح'),
@@ -18,6 +19,7 @@ type FormData = z.infer<typeof schema>;
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [tsToken, setTsToken] = useState('');
   const navigate = useNavigate();
   const setAuth = useAuthStore((s) => s.setAuth);
 
@@ -28,7 +30,7 @@ export default function LoginPage() {
   const onSubmit = async (data: FormData) => {
     setLoading(true);
     try {
-      const response = await authApi.login(data.email, data.password);
+      const response = await authApi.login(data.email, data.password, tsToken);
       const { token, user } = response.data.data;
       setAuth(token, user);
       toast.success(`مرحباً ${user.full_name_ar ?? user.full_name}!`);
@@ -121,6 +123,8 @@ export default function LoginPage() {
               </div>
               {errors.password && <p className="text-xs mt-1" style={{ color: '#DC2626' }}>{errors.password.message}</p>}
             </div>
+
+            <TurnstileWidget onToken={setTsToken} onExpire={() => setTsToken('')} />
 
             <button type="submit" disabled={loading}
               className="w-full font-bold py-3 rounded-xl transition-all duration-200 disabled:opacity-60 flex items-center justify-center gap-2 text-sm"

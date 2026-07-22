@@ -26,8 +26,8 @@ api.interceptors.response.use(
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
 export const authApi = {
-  login: (email: string, password: string) =>
-    api.post<{ success: boolean; data: { token: string; user: any } }>('/auth/login', { email, password }),
+  login: (email: string, password: string, cf_turnstile_token?: string) =>
+    api.post<{ success: boolean; data: { token: string; user: any } }>('/auth/login', { email, password, cf_turnstile_token }),
   me: () => api.get('/auth/me'),
   logout: () => api.post('/auth/logout'),
 };
