@@ -6,22 +6,27 @@ import type { WhatsAppWebhookPayload } from '../types/index.js';
 
 export const handleWhatsAppWebhook = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    // Authenticate the webhook. Evolution v2 sends the *instance* token in the
-    // apikey header, not the global API key, so accept either: the configured
-    // global key, or any live per-instance token Evolution reports.
+    // Webhook authentication.
+    //
+    // Evolution API v2 does NOT send an apikey header on webhooks by default —
+    // it authenticates the *caller* (us), not the callee, and relies on the
+    // webhook URL itself being secret. So the rule is:
+    //   • no apikey header  -> trust it (Evolution's default; URL is the secret)
+    //   • apikey present     -> it MUST be the global key or a live instance
+    //                           token, otherwise it's a spoof attempt -> reject
     const apikey = req.headers['apikey'] as string | undefined;
     const globalKey = process.env['EVOLUTION_API_KEY'];
 
-    if (globalKey) {
+    if (apikey && globalKey) {
       let authorized = apikey === globalKey;
-      if (!authorized && apikey) {
+      if (!authorized) {
         const tokens = await whatsappService.validInstanceTokens();
         authorized = tokens.has(apikey);
       }
       if (!authorized) {
-        logger.warn('Webhook rejected: invalid apikey', {
+        logger.warn('Webhook rejected: apikey present but invalid', {
           ip: req.ip,
-          received: apikey ? apikey.slice(0, 8) + '...' : 'none',
+          received: apikey.slice(0, 8) + '...',
         });
         res.status(401).json({ success: false, error: 'Unauthorized' });
         return;
