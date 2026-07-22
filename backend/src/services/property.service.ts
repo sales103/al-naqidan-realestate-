@@ -202,6 +202,26 @@ export class PropertyService {
     return property;
   }
 
+  async remove(id: string): Promise<void> {
+    // A property tied to a recorded deal is a real business record — refuse to
+    // hard-delete it rather than cascade-destroying the deal history.
+    const deal = await this.db('deals').where('property_id', id).first().catch(() => null);
+    if (deal) throw new Error('لا يمكن حذف عقار مرتبط بصفقة مسجّلة');
+
+    // Clean up child rows defensively: property_media / interests / price
+    // history cascade on the documented schema, but the live DB has drifted
+    // before, so delete them explicitly and ignore tables that don't exist.
+    // appointments.property_id has no cascade — null it so the appointment
+    // record survives without a dangling reference.
+    await this.db('appointments').where('property_id', id).update({ property_id: null }).catch(() => {});
+    for (const table of ['property_media', 'client_property_interests', 'property_price_history']) {
+      await this.db(table).where('property_id', id).del().catch(() => {});
+    }
+
+    await this.db('properties').where('id', id).del();
+    await cacheDel(cacheKeys.propertyDetail(id), cacheKeys.dashboardStats());
+  }
+
   async incrementViewCount(id: string): Promise<void> {
     await this.db('properties').where('id', id).increment('view_count', 1);
   }

@@ -120,6 +120,11 @@ function PropertyModal({ property, onClose }: { property?: any; onClose: () => v
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['properties'] }); toast.success('تم حفظ التعديلات'); onClose(); },
     onError: (e: any) => toast.error(e?.response?.data?.error ?? 'حدث خطأ'),
   });
+  const deleteMut = useMutation({
+    mutationFn: () => propertiesApi.remove(property.id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['properties'] }); toast.success('تم حذف العقار'); onClose(); },
+    onError: (e: any) => toast.error(e?.response?.data?.error ?? 'تعذّر حذف العقار'),
+  });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -180,6 +185,14 @@ function PropertyModal({ property, onClose }: { property?: any; onClose: () => v
                 <span className="absolute bottom-3 right-3 text-white text-xs bg-black/50 px-2.5 py-1 rounded-full">
                   {form.extra_images.length + (form.main_image_url ? 1 : 0)} صورة
                 </span>
+                <button type="button" title="حذف الصورة الرئيسية"
+                  onClick={() => {
+                    if (form.main_image_url) set('main_image_url', '');
+                    else removeImage(0);
+                  }}
+                  className="absolute top-3 left-3 bg-black/60 hover:bg-red-600 text-white p-1.5 rounded-lg transition-colors">
+                  <TrashIcon className="w-4 h-4" />
+                </button>
               </div>
             ) : (
               <label className={`h-36 rounded-xl bg-gray-50 border-2 border-dashed flex items-center justify-center cursor-pointer transition-colors ${isUploading ? 'border-primary-300 bg-primary-50' : 'border-gray-200 hover:border-primary-300 hover:bg-primary-50/40'}`}>
@@ -375,6 +388,20 @@ function PropertyModal({ property, onClose }: { property?: any; onClose: () => v
             </button>
             <button type="button" onClick={onClose} className="btn-secondary px-6">إلغاء</button>
           </div>
+
+          {isEdit && (
+            <div className="pt-2">
+              <button type="button"
+                disabled={deleteMut.isPending}
+                onClick={() => {
+                  if (window.confirm('حذف هذا العقار نهائياً؟ لا يمكن التراجع.')) deleteMut.mutate();
+                }}
+                className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-medium text-red-600 border border-red-200 rounded-xl hover:bg-red-50 disabled:opacity-50 transition-colors">
+                <TrashIcon className="w-4 h-4" />
+                {deleteMut.isPending ? 'جاري الحذف...' : 'حذف العقار نهائياً'}
+              </button>
+            </div>
+          )}
         </form>
       </div>
     </div>

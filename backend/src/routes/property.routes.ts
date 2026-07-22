@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import {
   searchProperties, getProperty, createProperty,
-  updateProperty, getPropertyStats, getCities, getDistricts,
+  updateProperty, deleteProperty, getPropertyStats, getCities, getDistricts,
 } from '../controllers/property.controller.js';
 import { authenticate, authorize, pagination } from '../middleware/auth.middleware.js';
 
@@ -14,5 +14,6 @@ router.get('/cities/:cityId/districts', getDistricts);
 router.get('/:id', getProperty);
 router.post('/', authenticate, authorize('super_admin','admin','sales_manager','sales_agent'), createProperty);
 router.put('/:id', authenticate, authorize('super_admin','admin','sales_manager','sales_agent'), updateProperty);
+router.delete('/:id', authenticate, authorize('super_admin','admin','sales_manager'), deleteProperty);
 
 export default router;

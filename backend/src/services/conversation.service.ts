@@ -34,7 +34,10 @@ function recordError(where: string, e: any): void {
 // welcome → purpose → type → entry → location → budget → ai → escalated
 // =============================================================================
 
-type FlowState = 'welcome' | 'category' | 'type' | 'entry' | 'purpose' | 'ai' | 'booking_time' | 'complaint' | 'escalated';
+type FlowState =
+  | 'welcome' | 'intent' | 'category' | 'type' | 'entry'
+  | 'sell_details' | 'manage_details'
+  | 'ai' | 'booking_time' | 'complaint' | 'escalated';
 
 /** One selectable option. `keywords` let the customer answer in their own words. */
 interface FlowOption {
@@ -61,6 +64,8 @@ interface FlowContext {
   booking_prompted?: boolean;
   /** Which property (if any) a viewing is being booked for. */
   booking?: { property_id?: string };
+  /** When collecting an owner's listing: whether they're selling or handing it over to manage. */
+  deal_kind?: 'sell' | 'manage';
   /** Complaint mode: the bot stays here until a human takes over. */
   complaint?: {
     level: AngerLevel;
@@ -343,6 +348,13 @@ export class ConversationService {
     const clickedId = this.extractButtonId(payload);
     const text = (message.content ?? '').trim();
 
+    // While collecting a seller's / owner's property details, treat the whole
+    // message as that free text — checked before the code/compare/booking
+    // intercepts so a description that happens to contain a number or the word
+    // "موعد" isn't hijacked by them.
+    if (ctx.state === 'sell_details') { await this.stepSellDetails(text, client, conversation, ctx); return; }
+    if (ctx.state === 'manage_details') { await this.stepManageDetails(text, client, conversation, ctx); return; }
+
     // "تفاصيل الكود X" or "تفاصيل 2" (referencing the last batch) — checked
     // before the state machine so it works no matter which step the
     // conversation is on. A bare property code always matches on its own;
@@ -407,10 +419,10 @@ export class ConversationService {
 
     if (isNew || ctx.state === 'welcome') { await this.stepWelcome(client, conversation, ctx, isNew); return; }
     if (ctx.state === 'ai' || ctx.state === 'escalated') { await this.processWithAI(message, client, conversation, ctx, payload); return; }
+    if (ctx.state === 'intent') { await this.stepIntent(clickedId, text, client, conversation, ctx); return; }
     if (ctx.state === 'category') { await this.stepCategory(clickedId, text, client, conversation, ctx); return; }
-    if (ctx.state === 'type') { await this.stepType(clickedId, text, client, conversation, ctx); return; }
-    if (ctx.state === 'entry') { await this.stepEntry(clickedId, text, client, conversation, ctx); return; }
-    if (ctx.state === 'purpose') { await this.stepPurpose(clickedId, text, client, conversation, ctx, message); return; }
+    if (ctx.state === 'type') { await this.stepType(clickedId, text, client, conversation, ctx, message); return; }
+    if (ctx.state === 'entry') { await this.stepEntry(clickedId, text, client, conversation, ctx, message); return; }
     if (ctx.state === 'booking_time') { await this.stepBookingTime(clickedId, text, client, conversation, ctx); return; }
   }
 
@@ -597,15 +609,69 @@ export class ConversationService {
       await sleep(500);
     }
 
-    await this.askOptions(client, conversation, ctx, 'category', 'نوع العقار', 'تبحث عن عقار سكني أم تجاري؟', [
-      { id: 'cat_residential', title: 'سكني', keywords: ['سكني', 'سكن', 'شقه', 'شقة', 'بيت', 'فيلا', 'عوايل', 'عزاب'] },
-      { id: 'cat_commercial',  title: 'تجاري', keywords: ['تجاري', 'محل', 'صاله', 'معرض', 'مكتب', 'مستودع'] },
-    ]);
+    await this.askIntent(client, conversation, ctx);
     await clientService.update(client.id, { status: 'contacted' } as any);
   }
 
   // ===========================================================================
-  // Step 2 — Residential or commercial
+  // Step 2 — What does the customer want? (the very first choice)
+  // rent / buy / invest → continue the existing property-search flow.
+  // sell / manage → collect the property's details and hand off to a consultant.
+  // ===========================================================================
+
+  private async askIntent(client: Client, conversation: Conversation, ctx: FlowContext): Promise<void> {
+    await this.askOptions(client, conversation, ctx, 'intent', 'كيف نقدر نخدمك؟', 'اختر ما يناسبك:', [
+      { id: 'intent_rent',   title: 'أبحث عن إيجار',  keywords: ['ايجار', 'استئجار', 'استاجر', 'مستاجر', 'ابي اجار', 'ابغى اجار'] },
+      { id: 'intent_buy',    title: 'أبحث عن شراء',   keywords: ['شراء', 'شري', 'اشتري', 'تمليك', 'ابي اشتري'] },
+      { id: 'intent_invest', title: 'أبحث عن استثمار', keywords: ['استثمار', 'استثمر', 'عائد', 'دخل'] },
+      { id: 'intent_sell',   title: 'أبيع عقاري',      keywords: ['ابيع', 'بيع عقاري', 'ابغى ابيع', 'عندي عقار للبيع', 'اعرض للبيع'] },
+      { id: 'intent_manage', title: 'أعرض عقاري لإدارة الأملاك', keywords: ['اداره املاك', 'ادارة املاك', 'اداره', 'تاجير عقاري', 'ادير عقاري'] },
+    ]);
+  }
+
+  private async stepIntent(
+    clickedId: string | null, text: string,
+    client: Client, conversation: Conversation, ctx: FlowContext,
+  ): Promise<void> {
+    const choice = this.resolveChoice(clickedId, text, ctx);
+
+    if (choice === 'intent_sell') {
+      await this.saveFlowContext(conversation.id, { ...ctx, state: 'sell_details', deal_kind: 'sell', pending: undefined });
+      await whatsappService.sendText(
+        client.phone,
+        'تمام، عشان نساعدك في بيع عقارك أرسل لنا في رسالة واحدة:\nنوع العقار، الحي، المساحة، السعر المطلوب، ووصف مختصر.',
+        this.waInstance(conversation),
+      );
+      return;
+    }
+
+    if (choice === 'intent_manage') {
+      await this.saveFlowContext(conversation.id, { ...ctx, state: 'manage_details', deal_kind: 'manage', pending: undefined });
+      await whatsappService.sendText(
+        client.phone,
+        'يسعدنا إدارة عقارك. أرسل لنا في رسالة واحدة:\nنوع العقار، الحي، عدد الوحدات، والوضع الحالي (مؤجر أم شاغر)، وأي تفاصيل تهمك.',
+        this.waInstance(conversation),
+      );
+      return;
+    }
+
+    const purpose: 'rent' | 'buy' | undefined =
+      choice === 'intent_rent' ? 'rent'
+      : (choice === 'intent_buy' || choice === 'intent_invest') ? 'buy'
+      : undefined;
+
+    if (!purpose) { await this.reAsk(client, conversation, ctx); return; }
+
+    // rent / buy / invest all continue into the existing category → type flow,
+    // with the purpose already known so it isn't asked again at the end.
+    await this.askOptions(client, conversation, { ...ctx, purpose }, 'category', 'نوع العقار', 'تبحث عن عقار سكني أم تجاري؟', [
+      { id: 'cat_residential', title: 'سكني', keywords: ['سكني', 'سكن', 'شقه', 'شقة', 'بيت', 'فيلا', 'عوايل', 'عزاب'] },
+      { id: 'cat_commercial',  title: 'تجاري', keywords: ['تجاري', 'محل', 'صاله', 'معرض', 'مكتب', 'مستودع'] },
+    ]);
+  }
+
+  // ===========================================================================
+  // Step 3 — Residential or commercial
   // ===========================================================================
 
   private async stepCategory(
@@ -643,7 +709,7 @@ export class ConversationService {
 
   private async stepType(
     clickedId: string | null, text: string,
-    client: Client, conversation: Conversation, ctx: FlowContext,
+    client: Client, conversation: Conversation, ctx: FlowContext, message: Message,
   ): Promise<void> {
     const choice = this.resolveChoice(clickedId, text, ctx);
     if (!choice) { await this.reAsk(client, conversation, ctx); return; }
@@ -665,7 +731,7 @@ export class ConversationService {
     const propType = map[choice];
     if (!propType) { await this.reAsk(client, conversation, ctx); return; }
 
-    await this.askPurpose(client, conversation, { ...ctx, property_type: propType });
+    await this.startSearch(client, conversation, { ...ctx, property_type: propType }, message);
   }
 
   // ===========================================================================
@@ -674,7 +740,7 @@ export class ConversationService {
 
   private async stepEntry(
     clickedId: string | null, text: string,
-    client: Client, conversation: Conversation, ctx: FlowContext,
+    client: Client, conversation: Conversation, ctx: FlowContext, message: Message,
   ): Promise<void> {
     const choice = this.resolveChoice(clickedId, text, ctx);
     const map: Record<string, string> = ctx.entry_for === 'apt_family'
@@ -683,35 +749,19 @@ export class ConversationService {
     const finalType = choice ? map[choice] : undefined;
     if (!finalType) { await this.reAsk(client, conversation, ctx); return; }
 
-    await this.askPurpose(client, conversation, { ...ctx, property_type: finalType, entry_for: undefined });
+    await this.startSearch(client, conversation, { ...ctx, property_type: finalType, entry_for: undefined }, message);
   }
 
   // ===========================================================================
-  // Step 4 — Purpose (rent / buy / invest), asked once the type is known
+  // Step 4 — Kick off the search. Purpose was chosen up front (stepIntent), so
+  // there's no purpose question here — the type completes the request.
+  // The office operates in Buraydah only, so location is fixed too.
   // ===========================================================================
 
-  private async askPurpose(client: Client, conversation: Conversation, ctx: FlowContext): Promise<void> {
-    await this.askOptions(client, conversation, ctx, 'purpose', 'نوع الطلب', 'هل ترغب بالإيجار أم الشراء؟', [
-      { id: 'purpose_rent',   title: 'إيجار',  keywords: ['ايجار', 'استئجار', 'استاجر', 'مستاجر', 'للايجار'] },
-      { id: 'purpose_buy',    title: 'شراء',   keywords: ['شراء', 'شري', 'اشتري', 'تمليك', 'بيع', 'للبيع'] },
-      { id: 'purpose_invest', title: 'استثمار', keywords: ['استثمار', 'استثمر', 'عائد', 'دخل'] },
-    ]);
-  }
-
-  private async stepPurpose(
-    clickedId: string | null, text: string,
+  private async startSearch(
     client: Client, conversation: Conversation, ctx: FlowContext, message: Message,
   ): Promise<void> {
-    const choice = this.resolveChoice(clickedId, text, ctx);
-    const purpose: 'rent' | 'buy' | undefined =
-      choice === 'purpose_rent' ? 'rent'
-      : (choice === 'purpose_buy' || choice === 'purpose_invest') ? 'buy'
-      : undefined;
-
-    if (!purpose) { await this.reAsk(client, conversation, ctx); return; }
-
-    // No budget question — the client wants the type+purpose alone to trigger
-    // the search. The office operates in Buraydah only, so location is fixed too.
+    const purpose = ctx.purpose ?? 'buy';
     const newCtx: FlowContext = { ...ctx, state: 'ai', purpose, location: 'بريدة', pending: undefined };
     await this.saveFlowContext(conversation.id, newCtx);
 
@@ -734,6 +784,54 @@ export class ConversationService {
     await sleep(700);
 
     await this.processWithAI(message, client, conversation, newCtx, undefined);
+  }
+
+  // ===========================================================================
+  // Seller / owner details — collect the property, then hand off to a human.
+  // Any listing a customer wants to sell, or hand over for management, needs a
+  // consultant; the bot's job is only to capture it cleanly and route it.
+  // ===========================================================================
+
+  private async stepSellDetails(
+    text: string, client: Client, conversation: Conversation, ctx: FlowContext,
+  ): Promise<void> {
+    await this.captureOwnerListing(text, client, conversation, ctx, 'عقار للبيع من العميل');
+  }
+
+  private async stepManageDetails(
+    text: string, client: Client, conversation: Conversation, ctx: FlowContext,
+  ): Promise<void> {
+    await this.captureOwnerListing(text, client, conversation, ctx, 'عقار لإدارة الأملاك من العميل');
+  }
+
+  private async captureOwnerListing(
+    text: string, client: Client, conversation: Conversation, ctx: FlowContext, label: string,
+  ): Promise<void> {
+    const inst = this.waInstance(conversation);
+    const details = text.trim();
+
+    if (details.length < 5) {
+      await whatsappService.sendText(
+        client.phone,
+        'أرسل تفاصيل العقار من فضلك (النوع، الحي، المساحة، السعر، ووصف مختصر) في رسالة واحدة.',
+        inst,
+      );
+      return;
+    }
+
+    // Hand off to a consultant, but keep the bot available for anything else the
+    // customer asks next (state 'ai') rather than going silent.
+    await this.saveFlowContext(conversation.id, { ...ctx, state: 'ai', deal_kind: undefined, pending: undefined });
+    await this.db('conversations').where('id', conversation.id)
+      .update({ ai_handoff_requested: true, updated_at: new Date() })
+      .catch(() => {});
+    await this.notifyAgent(client, conversation, `${label}:\n${details}`);
+
+    await whatsappService.sendText(
+      client.phone,
+      `${ack()}، وصلتنا تفاصيل عقارك.\nبيتواصل معك أحد مستشارينا لإكمال الإجراءات.`,
+      inst,
+    );
   }
 
   // ===========================================================================
@@ -1029,8 +1127,9 @@ export class ConversationService {
     if (msg.extendedTextMessage) return { content: msg.extendedTextMessage.text, messageType: 'text' };
 
     const BTN: Record<string, string> = {
+      intent_rent: 'أبحث عن إيجار', intent_buy: 'أبحث عن شراء', intent_invest: 'أبحث عن استثمار',
+      intent_sell: 'أبيع عقاري', intent_manage: 'أعرض عقاري لإدارة الأملاك',
       cat_residential: 'عقار سكني', cat_commercial: 'عقار تجاري',
-      purpose_rent: 'أريد عقاراً للإيجار', purpose_buy: 'أريد شراء عقار', purpose_invest: 'أريد استثمار',
       type_apt_family: 'شقة عوائل', type_apt_single: 'شقة عزاب',
       type_house: 'بيت أو فيلا', type_land: 'أرض',
       entry_private: 'مدخل خاص', entry_shared: 'مدخل مشترك',

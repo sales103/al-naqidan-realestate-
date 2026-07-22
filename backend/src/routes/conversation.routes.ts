@@ -61,6 +61,20 @@ router.post('/:id/send', async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+router.delete('/:id', async (req, res, next) => {
+  try {
+    const db = getDatabase();
+    const id = req.params['id'];
+    const conv = await db('conversations').where('id', id).first();
+    if (!conv) { res.status(404).json({ success: false, error: 'Not found' }); return; }
+    // messages.conversation_id has no cascade guarantee on the live DB, so
+    // remove them first, then the conversation itself.
+    await db('messages').where('conversation_id', id).del().catch(() => {});
+    await db('conversations').where('id', id).del();
+    res.json({ success: true });
+  } catch (error) { next(error); }
+});
+
 router.patch('/:id/toggle-ai', async (req, res, next) => {
   try {
     const db = getDatabase();

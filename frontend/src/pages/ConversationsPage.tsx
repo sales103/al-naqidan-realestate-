@@ -4,7 +4,7 @@ import {
   ChatBubbleLeftRightIcon, PaperAirplaneIcon, CpuChipIcon,
   MagnifyingGlassIcon, UserIcon, BoltIcon,
   PhoneIcon, ClockIcon, StarIcon, XMarkIcon,
-  PencilSquareIcon, CheckIcon,
+  PencilSquareIcon, CheckIcon, TrashIcon,
 } from '@heroicons/react/24/outline';
 import { CpuChipIcon as CpuSolid } from '@heroicons/react/24/solid';
 import { conversationsApi, clientsApi } from '../services/api.ts';
@@ -267,6 +267,16 @@ export default function ConversationsPage() {
     },
   });
 
+  const deleteConv = useMutation({
+    mutationFn: () => conversationsApi.remove(selectedConv.id),
+    onSuccess: () => {
+      toast.success('تم حذف المحادثة');
+      setSelectedConv(null);
+      qc.invalidateQueries({ queryKey: ['conversations'] });
+    },
+    onError: () => toast.error('تعذّر حذف المحادثة'),
+  });
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [msgsRes]);
@@ -365,6 +375,17 @@ export default function ConversationsPage() {
                 className={`p-1.5 rounded-lg transition-colors ${showClientPanel ? 'bg-gray-200 text-gray-700' : 'text-gray-400 hover:bg-gray-100'}`}
                 title="بيانات العميل">
                 <UserIcon className="w-4 h-4" />
+              </button>
+
+              {/* Delete conversation */}
+              <button
+                onClick={() => {
+                  if (window.confirm('حذف هذه المحادثة وكل رسائلها نهائياً؟ لا يمكن التراجع.')) deleteConv.mutate();
+                }}
+                disabled={deleteConv.isPending}
+                className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50 transition-colors"
+                title="حذف المحادثة">
+                <TrashIcon className="w-4 h-4" />
               </button>
             </div>
           </div>

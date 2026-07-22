@@ -44,6 +44,7 @@ export const propertiesApi = {
   get: (id: string) => api.get(`/properties/${id}`),
   create: (data: any) => api.post('/properties', data),
   update: (id: string, data: any) => api.put(`/properties/${id}`, data),
+  remove: (id: string) => api.delete(`/properties/${id}`),
   stats: () => api.get('/properties/stats'),
   cities: () => api.get('/properties/cities'),
   districts: (cityId: number) => api.get(`/properties/cities/${cityId}/districts`),
@@ -101,6 +102,7 @@ export const conversationsApi = {
   messages: (id: string) => api.get(`/conversations/${id}/messages`),
   send: (id: string, text: string) => api.post(`/conversations/${id}/send`, { text }),
   toggleAI: (id: string) => api.patch(`/conversations/${id}/toggle-ai`),
+  remove: (id: string) => api.delete(`/conversations/${id}`),
 };
 
 // --- Notifications ---

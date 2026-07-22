@@ -159,6 +159,15 @@ export const updateProperty = async (req: Request, res: Response, next: NextFunc
   } catch (error) { next(error); }
 };
 
+export const deleteProperty = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const property = await propertyService.findById(req.params['id']!);
+    if (!property) throw new AppError(404, 'العقار غير موجود');
+    await propertyService.remove(req.params['id']!);
+    res.json({ success: true });
+  } catch (error) { next(error); }
+};
+
 export const getPropertyStats = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const stats = await propertyService.getStats();
