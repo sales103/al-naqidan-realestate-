@@ -27,7 +27,7 @@ export const config = {
 
   auth: {
     jwtSecret: optionalEnv('JWT_SECRET', 'dev-secret-change-in-production-64-chars-minimum'),
-    jwtExpiresIn: optionalEnv('JWT_EXPIRES_IN', '7d'),
+    jwtExpiresIn: optionalEnv('JWT_EXPIRES_IN', '24h'),
     bcryptRounds: parseInt(optionalEnv('BCRYPT_ROUNDS', '12'), 10),
     webhookSecret: optionalEnv('WEBHOOK_SECRET', 'webhook-secret'),
   },
