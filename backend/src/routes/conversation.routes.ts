@@ -43,6 +43,19 @@ router.post('/:id/send', async (req, res, next) => {
     const conv = await db('conversations').where('id', req.params['id']).first();
     if (!conv) { res.status(404).json({ success: false, error: 'Conversation not found' }); return; }
 
+    // "11" is a staff-only control command, not a message: it hands the
+    // conversation over to the human who typed it. It must never reach the
+    // customer, so return before anything is sent or stored.
+    if (text.trim() === '11') {
+      await db('conversations').where('id', req.params['id']).update({
+        is_ai_enabled: false,
+        ai_handoff_requested: false,
+        updated_at: new Date(),
+      });
+      res.json({ success: true, data: { is_ai_enabled: false, command: 'takeover' } });
+      return;
+    }
+
     const client = await db('clients').where('id', conv.client_id).first();
     const msgId = await whatsappService.sendText(client.phone, text);
 

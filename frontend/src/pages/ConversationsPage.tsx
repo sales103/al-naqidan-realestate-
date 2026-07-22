@@ -288,8 +288,14 @@ export default function ConversationsPage() {
 
   const sendMut = useMutation({
     mutationFn: (text: string) => conversationsApi.send(selectedConv.id, text),
-    onSuccess: () => {
+    onSuccess: (res: any) => {
       setMessage(''); setShowQuickReplies(false);
+      // "11" is a takeover command, not a message — the backend stops the bot
+      // and sends nothing to the customer, so reflect that in the UI.
+      if (res?.data?.data?.command === 'takeover') {
+        toast.success('تم إيقاف البوت — أنت الآن تتولى المحادثة');
+        setSelectedConv((p: any) => p ? { ...p, is_ai_enabled: false } : p);
+      }
       qc.invalidateQueries({ queryKey: ['messages', selectedConv.id] });
       qc.invalidateQueries({ queryKey: ['conversations'] });
     },

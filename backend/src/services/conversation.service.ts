@@ -37,7 +37,7 @@ function recordError(where: string, e: any): void {
 type FlowState =
   | 'welcome' | 'intent' | 'category' | 'type' | 'entry'
   | 'sell_details' | 'manage_details'
-  | 'ai' | 'booking_time' | 'complaint' | 'escalated';
+  | 'ai' | 'booking_time' | 'complaint' | 'complaint_intake' | 'escalated';
 
 /** One selectable option. `keywords` let the customer answer in their own words. */
 interface FlowOption {
@@ -370,6 +370,7 @@ export class ConversationService {
     // message as that free text — checked before the code/compare/booking
     // intercepts so a description that happens to contain a number or the word
     // "موعد" isn't hijacked by them.
+    if (ctx.state === 'complaint_intake') { await this.stepComplaintIntake(text, client, conversation, ctx); return; }
     if (ctx.state === 'sell_details') { await this.stepSellDetails(text, client, conversation, ctx); return; }
     if (ctx.state === 'manage_details') { await this.stepManageDetails(text, client, conversation, ctx); return; }
 
@@ -641,6 +642,7 @@ export class ConversationService {
       { id: 'intent_invest', title: 'أبحث عن استثمار', keywords: ['استثمار', 'استثمر', 'عائد', 'دخل'] },
       { id: 'intent_sell',   title: 'أبيع عقاري',      keywords: ['ابيع', 'بيع عقاري', 'ابغى ابيع', 'عندي عقار للبيع', 'اعرض للبيع'] },
       { id: 'intent_manage', title: 'أعرض عقاري لإدارة الأملاك', keywords: ['اداره املاك', 'ادارة املاك', 'اداره', 'تاجير عقاري', 'ادير عقاري'] },
+      { id: 'intent_complaint', title: 'تقديم شكوى', keywords: ['شكوي', 'شكوى', 'اشتكي', 'شكاوي', 'مشكله', 'مشكلة', 'اعتراض'] },
     ]);
   }
 
@@ -653,6 +655,14 @@ export class ConversationService {
     if (choice === 'intent_sell') {
       await this.saveFlowContext(conversation.id, { ...ctx, state: 'sell_details', deal_kind: 'sell', pending: undefined });
       await this.reply(client, conversation, 'تمام، عشان نساعدك في بيع عقارك أرسل لنا في رسالة واحدة:\nنوع العقار، الحي، المساحة، السعر المطلوب، ووصف مختصر.');
+      return;
+    }
+
+    if (choice === 'intent_complaint') {
+      await this.saveFlowContext(conversation.id, { ...ctx, state: 'complaint_intake', pending: undefined });
+      await this.reply(client, conversation,
+        'نعتذر عن أي إزعاج، ويهمّنا رضاك.\n'
+        + 'اكتب لنا شكواك بالتفصيل في رسالة واحدة، وسنقوم بتسجيلها ورفعها للقسم المختص فوراً.');
       return;
     }
 
@@ -794,6 +804,56 @@ export class ConversationService {
   // Any listing a customer wants to sell, or hand over for management, needs a
   // consultant; the bot's job is only to capture it cleanly and route it.
   // ===========================================================================
+
+  // ===========================================================================
+  // Complaint intake (menu option 6) — record it, route it, reassure the
+  // customer. Deliberately no interrogation: the customer is already annoyed,
+  // so we take the complaint in one message and hand it to a human.
+  // ===========================================================================
+
+  private async stepComplaintIntake(
+    text: string, client: Client, conversation: Conversation, ctx: FlowContext,
+  ): Promise<void> {
+    const details = text.trim();
+
+    if (details.length < 5) {
+      await this.reply(client, conversation,
+        'تفضّل بكتابة تفاصيل الشكوى في رسالة واحدة حتى نتمكن من رفعها للقسم المختص.');
+      return;
+    }
+
+    const signal = detectComplaint(details);
+    const summary = buildAgentSummary({
+      clientName: client.full_name,
+      phone: client.phone,
+      level: signal.level,
+      category: signal.category,
+      description: details,
+    });
+
+    // Flag the conversation and notify the team. Recording the complaint must
+    // never fail silently — but it also must not block the customer's reply.
+    try {
+      await this.db('conversations').where('id', conversation.id)
+        .update({ ai_handoff_requested: true, updated_at: new Date() });
+      await this.notifyAgent(client, conversation, summary);
+      logger.info('complaint recorded', {
+        clientId: client.id, level: signal.level, category: signal.category,
+      });
+    } catch (e: any) {
+      logger.error('complaint recording failed', { clientId: client.id, error: e?.message });
+    }
+
+    // Bot's job ends here: it records and reassures, it does not try to solve.
+    await this.saveFlowContext(conversation.id, { ...ctx, state: 'escalated', pending: undefined });
+
+    await this.reply(client, conversation,
+      'شكراً لك على إبلاغنا، ونعتذر لك عمّا حصل.\n\n'
+      + 'تم تسجيل شكواك ورفعها للقسم المختص، وهي الآن قيد المعالجة.\n'
+      + 'سيتواصل معك أحد مستشارينا لمتابعتها معك حتى إغلاقها.\n\n'
+      + 'نقدّر ثقتك بنا وحرصك على تنبيهنا.\n'
+      + 'مكتب عبدالحكيم النقيدان العقاري');
+  }
 
   private async stepSellDetails(
     text: string, client: Client, conversation: Conversation, ctx: FlowContext,
