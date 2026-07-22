@@ -29,6 +29,23 @@
     background-color: var(--surface-bg);
     color: #0F1C35;
   }
+
+  /* Mobile guards.
+     A single overflowing decoration used to make the whole page scroll
+     sideways; clip it at the root so no page can ever do that again. */
+  html, body {
+    overflow-x: hidden;
+    max-width: 100%;
+  }
+
+  /* iOS Safari zooms the viewport whenever a focused field is under 16px,
+     and never zooms back out — that is what makes the app look squeezed
+     after the first tap into an input. Hold inputs at 16px on phones. */
+  @media (max-width: 640px) {
+    input, select, textarea {
+      font-size: 16px !important;
+    }
+  }
 }
 
 @layer components {

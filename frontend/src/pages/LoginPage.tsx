@@ -44,7 +44,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4" dir="rtl" style={{
+    <div className="min-h-screen flex items-center justify-center p-4 overflow-hidden relative" dir="rtl" style={{
       background: 'linear-gradient(135deg, #060C18 0%, #0B1525 40%, #0D1E3A 70%, #060C18 100%)',
     }}>
       {/* Background grid */}

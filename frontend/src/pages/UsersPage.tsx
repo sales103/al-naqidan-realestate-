@@ -228,7 +228,8 @@ export default function UsersPage() {
           </div>
         ) : (
           <div className="rounded-2xl overflow-hidden" style={{ background: '#fff', border: '1px solid rgba(59,91,219,0.08)', boxShadow: '0 1px 4px rgba(6,12,24,0.05)' }}>
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm" style={{ minWidth: '640px' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid rgba(59,91,219,0.06)', background: 'rgba(242,246,255,0.6)' }}>
                   {['الموظف', 'البريد الإلكتروني', 'الدور', 'واتساب', ''].map((h, i) => (
@@ -309,6 +310,7 @@ export default function UsersPage() {
                 })}
               </tbody>
             </table>
+            </div>
           </div>
         )
       )}
