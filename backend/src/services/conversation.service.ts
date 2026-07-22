@@ -151,6 +151,12 @@ function extractBudget(text: string, purpose?: 'rent' | 'buy'): number | undefin
 const ACKS = ['أبشر', 'الله يعطيك العافية', 'يسعدني خدمتك', 'بكل سرور', 'تمام', 'ممتاز'];
 const ack = (): string => ACKS[Math.floor(Math.random() * ACKS.length)]!;
 
+/** Footer telling the customer how to get back to the main menu. */
+const MENU_HINT = '\n\n———\nللعودة للقائمة الرئيسية أرسل 0';
+/** Append the hint once — never twice on the same message. */
+const withMenuHint = (text: string): string =>
+  text.includes('أرسل 0') ? text : text + MENU_HINT;
+
 // ─── Per-client rate limiting ────────────────────────────────────────────────
 // Redis caching is disabled in production for this project (no valid host
 // configured — see cacheGet/cacheSet, which silently no-op there), so a
@@ -347,7 +353,10 @@ export class ConversationService {
     // "ابدأ من جديد" resets the whole flow instead of being parsed as a request.
     const RESTART = ['من الصفر', 'من البدايه', 'من البداية', 'ابدا من جديد', 'ابدأ من جديد', 'نبدا من جديد', 'رجعني', 'الغي', 'إلغاء', 'restart', 'reset'];
     const normText = normalizeAr((message.content ?? ''));
-    if (normText && RESTART.some(w => normText.includes(normalizeAr(w)))) {
+    // A bare "0" is the documented shortcut back to the main menu. Menus are
+    // 1-indexed, so 0 can never collide with an option the customer is picking.
+    const isMenuShortcut = /^0+$/.test(normText);
+    if (normText && (isMenuShortcut || RESTART.some(w => normText.includes(normalizeAr(w))))) {
       await this.saveFlowContext(conversation.id, { state: 'welcome' });
       await this.reply(client, conversation, 'تمام، نبدأ من جديد');
       await sleep(400);
@@ -817,7 +826,7 @@ export class ConversationService {
       .catch(() => {});
     await this.notifyAgent(client, conversation, `${label}:\n${details}`);
 
-    await this.reply(client, conversation, `${ack()}، وصلتنا تفاصيل عقارك.\nبيتواصل معك أحد مستشارينا لإكمال الإجراءات.`);
+    await this.reply(client, conversation, withMenuHint(`${ack()}، وصلتنا تفاصيل عقارك.\nبيتواصل معك أحد مستشارينا لإكمال الإجراءات.`));
   }
 
   // ===========================================================================
@@ -959,6 +968,7 @@ export class ConversationService {
         responseText = `${responseText}\n\n${this.handoffNote()}`;
       }
 
+      responseText = withMenuHint(responseText);
       const outboundMsgId = await whatsappService.sendText(client.phone, responseText, this.waInstance(conversation));
       await this.saveMessage({
         conversation_id: conversation.id, whatsapp_message_id: outboundMsgId,
@@ -1050,11 +1060,11 @@ export class ConversationService {
           booking_prompted: true,
         });
         await sleep(400);
-        await this.reply(client, conversation, 'هل تود ترتيب موعد معاينة لأي منها؟ اكتب رقم العقار أو اسأل عن أي تفاصيل');
+        await this.reply(client, conversation, withMenuHint('هل تود ترتيب موعد معاينة لأي منها؟ اكتب رقم العقار أو اسأل عن أي تفاصيل'));
         return;
       }
 
-      await this.reply(client, conversation, 'لم أجد حالياً عقاراً مطابقاً لطلبك تماماً.\n\nسجّلت طلبك وسيتواصل معك أحد مستشارينا بأقرب الخيارات المتاحة.\n\n' + this.handoffNote());
+      await this.reply(client, conversation, withMenuHint('لم أجد حالياً عقاراً مطابقاً لطلبك تماماً.\n\nسجّلت طلبك وسيتواصل معك أحد مستشارينا بأقرب الخيارات المتاحة.\n\n' + this.handoffNote()));
       // Notify the team, but keep the bot listening: an empty result is not a
       // reason to go silent on the customer for the rest of the conversation.
       await this.notifyAgent(client, conversation, 'لا توجد عقارات مطابقة — يحتاج متابعة بشرية');
@@ -1282,7 +1292,7 @@ export class ConversationService {
       return;
     }
 
-    await this.reply(client, conversation, formatPropertyDetails(property));
+    await this.reply(client, conversation, withMenuHint(formatPropertyDetails(property)));
 
     // findByCode doesn't join property_media, and a "details" request is the
     // one moment the customer explicitly wants everything — not just the
@@ -1337,7 +1347,7 @@ export class ConversationService {
       return;
     }
 
-    await this.reply(client, conversation, this.buildComparisonMessage(pairs));
+    await this.reply(client, conversation, withMenuHint(this.buildComparisonMessage(pairs)));
   }
 
   private buildComparisonMessage(pairs: { n: number; p: any }[]): string {
