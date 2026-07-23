@@ -128,6 +128,38 @@ describe('AI Agent — intent extraction', () => {
   });
 });
 
+describe('AI Agent — numeric coercion', () => {
+  it('parses a budget the model returned as an Arabic string', async () => {
+    // The model is told to return a number but frequently answers "700 ألف".
+    // That string used to reach a numeric SQL comparison and error out,
+    // costing the customer the reply.
+    createMock.mockResolvedValueOnce(modelReply({
+      intent: 'search_property',
+      budget_max: '700 ألف',
+    }));
+
+    const { processMessage } = await import('../../src/ai/agent.js');
+    const result = await processMessage('شقة بسبعمية ألف', client(), []);
+
+    expect(result.extracted_data.budget_max).toBe(700000);
+    expect(typeof result.extracted_data.budget_max).toBe('number');
+  });
+
+  it('drops an unparseable budget rather than forwarding it', async () => {
+    createMock.mockResolvedValueOnce(modelReply({
+      intent: 'search_property',
+      budget_max: 'غير محدد',
+      rooms: 'كثير',
+    }));
+
+    const { processMessage } = await import('../../src/ai/agent.js');
+    const result = await processMessage('ابغى شقة', client(), []);
+
+    expect(result.extracted_data.budget_max).toBeUndefined();
+    expect(result.extracted_data.rooms).toBeUndefined();
+  });
+});
+
 describe('AI Agent — property formatting', () => {
   const prop = {
     id: '1', code: 'APT-00001', title: 'Apartment', title_ar: 'شقة فاخرة',

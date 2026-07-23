@@ -280,13 +280,33 @@ const parseAIOutput = (
     confidence: recognised ? 0.9 : 0.5,
   };
 
+  const toNum = (v: unknown): number | undefined => {
+    if (typeof v === 'number') return Number.isFinite(v) && v > 0 ? v : undefined;
+    if (typeof v === 'string') {
+      const latin = v
+        .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+        .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06F0));
+      // "مليون" / "million" without digits still carries a magnitude.
+      const millions = /مليون|million/i.test(latin);
+      const thousands = /ألف|الف|thousand|k/i.test(latin);
+      const digits = latin.replace(/[^\d.]/g, '');
+      let n = parseFloat(digits);
+      if (!Number.isFinite(n) || n <= 0) return undefined;
+      // A bare "700" alongside "ألف" is 700 thousand; "1.5 مليون" is 1.5m.
+      if (millions && n < 100000) n *= 1_000_000;
+      else if (thousands && n < 1000) n *= 1_000;
+      return n;
+    }
+    return undefined;
+  };
+
   const extracted_data: AIExtractedData = {
     property_type: normalizeEnum(parsed.property_type, PROPERTY_TYPE_NORMALIZE) as any,
     city: parsed.city ?? undefined,
     district: parsed.district ?? undefined,
-    budget_max: parsed.budget_max ?? undefined,
-    budget_min: parsed.budget_min ?? undefined,
-    rooms: parsed.rooms ?? undefined,
+    budget_max: toNum(parsed.budget_max),
+    budget_min: toNum(parsed.budget_min),
+    rooms: (() => { const r = toNum(parsed.rooms); return r === undefined ? undefined : Math.round(r); })(),
     purpose: normalizeEnum(parsed.purpose, PURPOSE_NORMALIZE) as any,
     client_name: parsed.client_name ?? undefined,
     urgency: parsed.urgency ?? 'low',
