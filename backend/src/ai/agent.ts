@@ -261,9 +261,23 @@ const parseAIOutput = (
     if (match) parsed = JSON.parse(match[0]);
   } catch { /* use defaults */ }
 
+  const KNOWN_INTENTS = new Set([
+    'search_property', 'property_details', 'price_inquiry', 'appointment_request',
+    'greeting', 'complaint', 'human_agent_request', 'general_inquiry', 'unknown',
+  ]);
+
+  // A model may answer with a bare string, a {primary} object, or a label we
+  // never listed. Normalise all three rather than letting a non-string reach
+  // the database or an unrecognised label silently change routing.
+  const rawIntent: unknown = typeof parsed.intent === 'object' && parsed.intent !== null
+    ? (parsed.intent as any).primary
+    : parsed.intent;
+  const intentName = typeof rawIntent === 'string' ? rawIntent.trim() : '';
+  const recognised = KNOWN_INTENTS.has(intentName);
+
   const intent: AIIntent = {
-    primary: parsed.intent ?? 'general_inquiry',
-    confidence: parsed.intent ? 0.9 : 0.5,
+    primary: recognised ? intentName : 'general_inquiry',
+    confidence: recognised ? 0.9 : 0.5,
   };
 
   const extracted_data: AIExtractedData = {

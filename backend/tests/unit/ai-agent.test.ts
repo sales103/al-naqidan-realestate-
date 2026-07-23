@@ -74,6 +74,31 @@ describe('AI Agent — intent extraction', () => {
     expect(result.response).toContain('أهلاً');
   });
 
+  it('normalises an intent the model wrapped in an object', async () => {
+    // Models occasionally answer {primary, confidence} despite the contract.
+    // That object used to reach messages.ai_intent (a text column) and break
+    // the update, costing the customer the reply.
+    createMock.mockResolvedValueOnce(modelReply({
+      intent: { primary: 'search_property', confidence: 0.9 },
+    }));
+
+    const { processMessage } = await import('../../src/ai/agent.js');
+    const result = await processMessage('شقة؟', client(), []);
+
+    expect(typeof result.intent.primary).toBe('string');
+    expect(result.intent.primary).toBe('search_property');
+  });
+
+  it('falls back when the model invents an unlisted intent', async () => {
+    createMock.mockResolvedValueOnce(modelReply({ intent: 'buy_a_camel' }));
+
+    const { processMessage } = await import('../../src/ai/agent.js');
+    const result = await processMessage('...', client(), []);
+
+    expect(result.intent.primary).toBe('general_inquiry');
+    expect(result.should_escalate).toBe(false);
+  });
+
   it('escalates when the customer asks for a human', async () => {
     createMock.mockResolvedValueOnce(modelReply({ intent: 'human_agent_request' }));
 
