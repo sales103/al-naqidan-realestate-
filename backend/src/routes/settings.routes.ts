@@ -16,8 +16,8 @@ function requireAdmin(req: Request, _res: Response, next: NextFunction) {
   next();
 }
 
-// GET /api/settings — return all settings (value only, no secrets in plain text)
-router.get('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+// GET /api/settings — return all settings (admin only)
+router.get('/', requireAdmin, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const db = getDatabase();
     const rows = await db('system_settings').select('key', 'value', 'description', 'updated_at');
@@ -32,8 +32,17 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
   } catch (error) { next(error); }
 });
 
-// GET /api/settings/:key
-router.get('/:key', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+// GET /api/settings/company — public (non-sensitive company info)
+router.get('/company', async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const db = getDatabase();
+    const row = await db('system_settings').where('key', 'company').first();
+    res.json({ success: true, data: row?.value ?? null });
+  } catch (error) { next(error); }
+});
+
+// GET /api/settings/:key (admin only)
+router.get('/:key', requireAdmin, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const db = getDatabase();
     const row = await db('system_settings').where('key', req.params['key']).first();

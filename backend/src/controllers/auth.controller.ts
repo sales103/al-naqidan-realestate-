@@ -17,7 +17,7 @@ import {
 import type { User } from '../types/index.js';
 
 function generateOtp(): string {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return crypto.randomInt(100000, 999999).toString();
 }
 
 async function getCompanyName(): Promise<string> {
@@ -53,7 +53,7 @@ async function sendOtpEmail(to: string, otp: string, name?: string) {
   const greeting = name ? `<p style="color:#374151;margin:0 0 20px;">مرحباً ${name}،</p>` : '';
   await sendMail(
     to,
-    `رمز التحقق: ${otp}`,
+    `رمز التحقق - ${companyName}`,
     `<div dir="rtl" style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:32px;border:1px solid #e5e7eb;border-radius:16px;">
       <h2 style="color:#1d4ed8;margin:0 0 8px;">${companyName}</h2>
       ${greeting}

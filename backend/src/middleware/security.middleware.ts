@@ -42,6 +42,12 @@ export const otpVerifyRateLimit = makeRateLimit(
   'محاولات OTP كثيرة — انتظر 10 دقائق'
 );
 
+// Register / reset-password: 5 attempts / 15 min per IP
+export const authActionRateLimit = makeRateLimit(
+  15 * 60 * 1000, 5,
+  'محاولات كثيرة — انتظر 15 دقيقة'
+);
+
 // Setup: 5 attempts / hour (one-time endpoint)
 export const setupRateLimit = makeRateLimit(
   60 * 60 * 1000, 5,
