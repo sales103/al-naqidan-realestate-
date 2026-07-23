@@ -28,6 +28,10 @@ const createSchema = z.object({
   description_ar: z.string().optional(),
   property_type: z.enum(['land','apartment','villa','building','office','showroom','warehouse','farm','investment_project','other']),
   purpose: z.enum(['sale','rent','both']).default('sale'),
+  // Lets the bot tell a شقة عزاب from a شقة عوائل. null = not specified, which
+  // keeps the listing eligible for every request rather than excluding it.
+  occupancy_type: z.enum(['family','singles']).nullable().optional(),
+  entrance_type:  z.enum(['private','shared']).nullable().optional(),
   status: z.enum(['available','reserved','sold','rented','under_maintenance','coming_soon','hidden']).default('available'),
   city_id: z.number().optional(),
   district_id: z.number().optional(),

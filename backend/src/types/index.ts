@@ -46,6 +46,8 @@ export interface User {
 }
 
 export interface Property {
+  occupancy_type?: OccupancyType;
+  entrance_type?: EntranceType;
   id: string;
   code: string;
   title: string;
@@ -306,8 +308,15 @@ export interface AIProcessingResult {
   cost_usd: number;
 }
 
+/** Who the unit is let to. Independent of entrance_type. */
+export type OccupancyType = 'family' | 'singles';
+/** Whether the unit has its own entrance or shares one. */
+export type EntranceType  = 'private' | 'shared';
+
 export interface PropertySearchParams {
   property_type?: PropertyType;
+  occupancy_type?: OccupancyType;
+  entrance_type?: EntranceType;
   city_ids?: number[];
   district_ids?: number[];
   price_min?: number;

@@ -29,6 +29,7 @@ const statusConfig: Record<string, { label: string; color: string; dot: string }
 
 const emptyForm = {
   title: '', property_type: 'apartment', purpose: 'sale', status: 'available',
+  occupancy_type: '', entrance_type: '',
   price: '', area_sqm: '', rooms: '', bathrooms: '', kitchens: '', living_rooms: '', address: '', google_maps_url: '', description_ar: '',
   is_featured: false, negotiable: true,
   main_image_url: '', extra_images: [] as string[],
@@ -42,6 +43,8 @@ function PropertyModal({ property, onClose }: { property?: any; onClose: () => v
   const [form, setForm] = useState(isEdit ? {
     title:          property.title_ar ?? property.title ?? '',
     property_type:  property.property_type ?? 'apartment',
+    occupancy_type: property.occupancy_type ?? '',
+    entrance_type:  property.entrance_type ?? '',
     purpose:        property.purpose ?? 'sale',
     status:         property.status ?? 'available',
     price:          property.price ?? '',
@@ -132,6 +135,10 @@ function PropertyModal({ property, onClose }: { property?: any; onClose: () => v
     const payload = {
       title: form.title, title_ar: form.title,
       property_type: form.property_type,
+      // '' means the team hasn't specified it; send null so the row stays
+      // unclassified and the bot keeps offering it, rather than storing ''.
+      occupancy_type: form.occupancy_type || null,
+      entrance_type:  form.entrance_type  || null,
       purpose: form.purpose,
       status: form.status,
       price:     parseFloat(String(form.price))    || undefined,
@@ -270,6 +277,28 @@ function PropertyModal({ property, onClose }: { property?: any; onClose: () => v
                 <select className="input w-full" value={form.property_type}
                   onChange={(e) => set('property_type', e.target.value)}>
                   {Object.entries(propertyTypeLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                  الفئة <span className="font-normal" style={{ color: '#94A3B8' }}>(للبوت)</span>
+                </label>
+                <select className="input w-full" value={form.occupancy_type}
+                  onChange={(e) => set('occupancy_type', e.target.value)}>
+                  <option value="">غير محدد</option>
+                  <option value="family">عوائل</option>
+                  <option value="singles">عزاب</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                  المدخل <span className="font-normal" style={{ color: '#94A3B8' }}>(للبوت)</span>
+                </label>
+                <select className="input w-full" value={form.entrance_type}
+                  onChange={(e) => set('entrance_type', e.target.value)}>
+                  <option value="">غير محدد</option>
+                  <option value="private">خاص</option>
+                  <option value="shared">مشترك</option>
                 </select>
               </div>
               <div>

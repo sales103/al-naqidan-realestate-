@@ -169,6 +169,20 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
 
         const property_type = typeMap[rawType] ?? 'apartment';
 
+        // Category for the bot's filtering. Prefer explicit columns; otherwise
+        // read it out of the type text, which is where these sheets normally
+        // record it ("شقة عزاب", "بيت مدخل خاص").
+        const catText = `${rawType} ${String(row['الفئة'] ?? row['occupancy'] ?? '')}`.trim();
+        const entText = `${rawType} ${String(row['المدخل'] ?? row['entrance'] ?? '')}`.trim();
+        const occupancy_type =
+          /عزاب|عزّاب|singles?/i.test(catText) ? 'singles'
+          : /عوائل|عوايل|عائل|famil/i.test(catText) ? 'family'
+          : null;
+        const entrance_type =
+          /مدخل\s*خاص|مستقل|private/i.test(entText) ? 'private'
+          : /مدخل\s*مشترك|shared/i.test(entText) ? 'shared'
+          : null;
+
         const rawStatus = String(row['الحالة'] ?? row['حالة العقار'] ?? row['status'] ?? 'متاحة').trim();
         const status = statusMap[rawStatus] ?? 'available';
 
@@ -267,6 +281,8 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
           longitude: coords?.lng ?? null,
           floor_number,
           price,
+          occupancy_type,
+          entrance_type,
           currency: 'SAR',
           negotiable: true,
           description_ar,

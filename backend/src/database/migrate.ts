@@ -83,6 +83,23 @@ const MIGRATIONS: { name: string; sql: string }[] = [
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS exclude_from_ai BOOLEAN NOT NULL DEFAULT FALSE;
     `,
   },
+  {
+    // The guided flow already distinguishes "شقة عزاب" from "شقة عوائل" and a
+    // private entrance from a shared one, but the listing had nowhere to record
+    // either — so the search could only filter on property_type and a customer
+    // asking for شقة عزاب received every apartment on file.
+    //
+    // Two orthogonal columns rather than one combined enum: occupancy and
+    // entrance vary independently (a family apartment may have either kind of
+    // entrance), and either may legitimately be unknown on an older listing.
+    name: '007_property_occupancy_and_entrance',
+    sql: `
+      ALTER TABLE properties ADD COLUMN IF NOT EXISTS occupancy_type VARCHAR(16);
+      ALTER TABLE properties ADD COLUMN IF NOT EXISTS entrance_type  VARCHAR(16);
+      CREATE INDEX IF NOT EXISTS properties_occupancy_idx ON properties (occupancy_type);
+      CREATE INDEX IF NOT EXISTS properties_entrance_idx  ON properties (entrance_type);
+    `,
+  },
 ];
 
 async function ensureMigrationsTable(): Promise<void> {

@@ -63,6 +63,17 @@ export class PropertyService {
     if (params.area_max !== undefined) query.where('p.area_sqm', '<=', params.area_max);
     if (params.rooms !== undefined) query.where('p.rooms', '>=', params.rooms);
 
+    // Occupancy / entrance: exclude only listings that explicitly contradict
+    // the request. Rows still unclassified (NULL) stay in the results — every
+    // property predates these columns, and dropping them would leave the bot
+    // with nothing to send on day one.
+    if (params.occupancy_type) {
+      query.where((b) => b.whereNull('p.occupancy_type').orWhere('p.occupancy_type', params.occupancy_type!));
+    }
+    if (params.entrance_type) {
+      query.where((b) => b.whereNull('p.entrance_type').orWhere('p.entrance_type', params.entrance_type!));
+    }
+
     // Each requested feature must appear (as a substring match, so "مطبخ" also
     // matches a listed "مطبخ راكب") in either features or amenities — AND
     // across multiple features, since asking for two both must be present.

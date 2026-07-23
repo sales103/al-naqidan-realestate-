@@ -48,6 +48,9 @@ interface FlowOption {
 
 interface FlowContext {
   state: FlowState;
+  /** ISO time of the customer's last inbound message, used to decide whether
+   *  the conversation has gone cold and should restart from the menu. */
+  last_seen?: string;
   purpose?: 'rent' | 'buy';
   property_type?: string;
   location?: string;
@@ -75,13 +78,18 @@ interface FlowContext {
   };
 }
 
-const PROPERTY_TYPE_MAP: Record<string, { db_types: string[]; label: string }> = {
-  apartment_family:         { db_types: ['apartment', 'villa'], label: 'شقة عوائل' },
-  apartment_family_private: { db_types: ['apartment', 'villa'], label: 'شقة عوائل مدخل خاص' },
-  apartment_family_shared:  { db_types: ['apartment', 'villa'], label: 'شقة عوائل مدخل مشترك' },
-  apartment_single: { db_types: ['apartment'],          label: 'شقة عزاب' },
-  house_private:    { db_types: ['villa'],              label: 'بيت مدخل خاص' },
-  house_shared:     { db_types: ['villa'],              label: 'بيت مدخل مشترك' },
+const PROPERTY_TYPE_MAP: Record<string, {
+  db_types: string[];
+  label: string;
+  occupancy?: 'family' | 'singles';
+  entrance?: 'private' | 'shared';
+}> = {
+  apartment_family:         { db_types: ['apartment', 'villa'], label: 'شقة عوائل', occupancy: 'family' },
+  apartment_family_private: { db_types: ['apartment', 'villa'], label: 'شقة عوائل مدخل خاص',   occupancy: 'family', entrance: 'private' },
+  apartment_family_shared:  { db_types: ['apartment', 'villa'], label: 'شقة عوائل مدخل مشترك', occupancy: 'family', entrance: 'shared'  },
+  apartment_single: { db_types: ['apartment'],          label: 'شقة عزاب', occupancy: 'singles' },
+  house_private:    { db_types: ['villa'],              label: 'بيت مدخل خاص',   entrance: 'private' },
+  house_shared:     { db_types: ['villa'],              label: 'بيت مدخل مشترك', entrance: 'shared'  },
   shop:             { db_types: ['showroom'],           label: 'محل تجاري' },
   hall:             { db_types: ['showroom'],           label: 'صالة تجارية' },
   office:           { db_types: ['office'],             label: 'مكتب' },
@@ -203,18 +211,36 @@ export class ConversationService {
       ?? null;
   }
 
+  /** A conversation idle this long restarts from the welcome menu. */
+  private static readonly STALE_AFTER_MS = 24 * 60 * 60 * 1000;
+
   private async getFlowContext(conversationId: string): Promise<FlowContext> {
     const conv = await this.db('conversations').where('id', conversationId).first();
     const ctx = conv?.conversation_context as FlowContext | undefined;
     // Empty/default context ('{}') has no state — treat it as a fresh welcome.
-    return ctx && ctx.state ? ctx : { state: 'welcome' };
+    if (!ctx?.state) return { state: 'welcome' };
+
+    const lastSeen = ctx.last_seen ? Date.parse(ctx.last_seen) : NaN;
+    if (Number.isFinite(lastSeen) && Date.now() - lastSeen > ConversationService.STALE_AFTER_MS) {
+      logger.info('Conversation went cold — restarting from the menu', {
+        conversationId, idleHours: Math.round((Date.now() - lastSeen) / 3600000),
+      });
+      // Keep what still matters a day later: which listings this customer has
+      // already been sent, so a fresh search does not repeat them.
+      return {
+        state: 'welcome',
+        shown_property_ids: ctx.shown_property_ids,
+      };
+    }
+    return ctx;
   }
 
   private async saveFlowContext(conversationId: string, ctx: FlowContext): Promise<void> {
     try {
+      const stamped: FlowContext = { ...ctx, last_seen: new Date().toISOString() };
       await this.db('conversations')
         .where('id', conversationId)
-        .update({ conversation_context: JSON.stringify(ctx), updated_at: new Date() });
+        .update({ conversation_context: JSON.stringify(stamped), updated_at: new Date() });
     } catch (e) {
       // Never let a state-save failure abort the reply pipeline.
       logger.error('saveFlowContext failed', { conversationId, error: (e as any)?.message });
@@ -942,6 +968,8 @@ export class ConversationService {
 
         const resolvedType = typeInfo?.db_types[0] ?? clientTypes[0];
         if (resolvedType) params.property_type = resolvedType;
+        if (typeInfo?.occupancy) params.occupancy_type = typeInfo.occupancy;
+        if (typeInfo?.entrance)  params.entrance_type  = typeInfo.entrance;
 
         const preResult = await propertyService.search(params);
         preloadedProperties = preResult.properties;
@@ -1093,6 +1121,8 @@ export class ConversationService {
 
       const typeInfo = PROPERTY_TYPE_MAP[ctx.property_type ?? ''];
       if (typeInfo?.db_types?.[0]) params.property_type = typeInfo.db_types[0];
+      if (typeInfo?.occupancy) params.occupancy_type = typeInfo.occupancy;
+      if (typeInfo?.entrance)  params.entrance_type  = typeInfo.entrance;
       if (ctx.budget) params.price_max = ctx.budget;
       if (ctx.purpose) params.purpose = ctx.purpose === 'rent' ? 'rent' : 'sale';
 
@@ -1175,6 +1205,15 @@ export class ConversationService {
     );
     const [msg] = await this.db('messages').insert(clean).returning('*') as Message[];
     if (!msg) throw new Error('Failed to save message');
+
+    // Keep the column the dashboard sorts on current. Bookkeeping — it must
+    // never fail the write that actually delivered the message.
+    if (data.conversation_id) {
+      this.db('conversations')
+        .where('id', data.conversation_id)
+        .update({ last_message_at: msg.created_at ?? new Date() })
+        .catch((e: any) => logger.warn('last_message_at not updated', { error: e?.message }));
+    }
     return msg;
   }
 
@@ -1252,7 +1291,9 @@ export class ConversationService {
     const enriched = { ...params };
     // Buraydah is implicit for the whole business — only filter when the
     // customer volunteers a specific district, so a mention still narrows results.
-    void ctx;
+    const typeInfo = PROPERTY_TYPE_MAP[ctx.property_type ?? ''];
+    if (typeInfo?.occupancy) enriched.occupancy_type = typeInfo.occupancy;
+    if (typeInfo?.entrance)  enriched.entrance_type  = typeInfo.entrance;
     const district = extracted.district ?? extracted.city;
     if (district) {
       const distId = await propertyService.resolveDistrictId(district);
