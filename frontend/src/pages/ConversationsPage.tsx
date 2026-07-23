@@ -7,6 +7,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { CpuChipIcon as CpuSolid } from '@heroicons/react/24/solid';
 import { conversationsApi, clientsApi } from '../services/api.ts';
+import { useAuthStore } from '../store/auth.store.ts';
 import toast from 'react-hot-toast';
 import { format, formatDistanceToNow } from 'date-fns';
 import { ar } from 'date-fns/locale';
@@ -254,6 +255,13 @@ function ClientPanel({ conv, onClose }: { conv: any; onClose: () => void }) {
 /* ── Main Page ───────────────────────────────────────────────────────────── */
 type Filter = 'all' | 'ai' | 'manual' | 'unread';
 
+const WA_INSTANCES = [
+  { id: 'naqidan-whatsapp-1', label: 'الرقم الأول' },
+  { id: 'naqidan-whatsapp-2', label: 'الرقم الثاني' },
+  { id: 'naqidan-whatsapp-3', label: 'الرقم الثالث' },
+];
+const MANAGER_ROLES = ['super_admin', 'admin', 'sales_manager'];
+
 export default function ConversationsPage() {
   const [selectedConv, setSelectedConv] = useState<any>(null);
   const [message, setMessage]           = useState('');
@@ -263,6 +271,9 @@ export default function ConversationsPage() {
   const [showClientPanel, setShowClientPanel]   = useState(false);
   const [confirmDelete, setConfirmDelete]       = useState(false);
   const [isMobile, setIsMobile]                 = useState(false);
+  const [waInstance, setWaInstance]             = useState<string>(''); // manager filter; '' = all
+  const me = useAuthStore((s) => s.user);
+  const isManager = MANAGER_ROLES.includes(me?.role ?? '');
   const bottomRef   = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const qc = useQueryClient();
@@ -275,8 +286,9 @@ export default function ConversationsPage() {
   }, []);
 
   const { data: convsRes } = useQuery({
-    queryKey: ['conversations'],
-    queryFn:  conversationsApi.list,
+    queryKey: ['conversations', waInstance],
+    // Managers may filter by number; the backend forces an agent to their own.
+    queryFn:  () => conversationsApi.list(waInstance ? { instance: waInstance } : undefined),
     refetchInterval: 6000,
   });
   const { data: msgsRes } = useQuery({
@@ -404,6 +416,23 @@ export default function ConversationsPage() {
                 placeholder="بحث بالاسم أو الرقم..."
                 className="input pr-8 text-xs w-full py-1.5" />
             </div>
+
+            {/* Managers pick which WhatsApp number to view; agents are locked to
+                their own by the backend and never see this control. */}
+            {isManager ? (
+              <select value={waInstance} onChange={(e) => setWaInstance(e.target.value)}
+                className="input text-xs w-full py-1.5 mb-1"
+                style={{ fontWeight: 600, color: '#3B5BDB' }}>
+                <option value="">📱 كل الأرقام</option>
+                {WA_INSTANCES.map((w) => <option key={w.id} value={w.id}>{w.label}</option>)}
+              </select>
+            ) : me?.whatsapp_instance ? (
+              <div className="flex items-center gap-1.5 mb-1 px-2 py-1 rounded-lg text-[11px] font-semibold"
+                style={{ background: 'rgba(59,91,219,0.06)', color: '#3B5BDB' }}>
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#22C55E' }} />
+                {WA_INSTANCES.find((w) => w.id === me.whatsapp_instance)?.label ?? 'رقمك المخصّص'}
+              </div>
+            ) : null}
             <div className="flex gap-1 overflow-x-auto pb-0.5">
               {([
                 { id: 'all',    label: 'الكل',      count: counts.all    },

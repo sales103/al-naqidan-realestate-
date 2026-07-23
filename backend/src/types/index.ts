@@ -424,6 +424,9 @@ export interface AuthPayload {
   user_id: string;
   email: string;
   role: UserRole;
+  /** The WhatsApp number this user works from. Scopes which conversations
+   *  they see. Filled by authenticate from the live user row, not the token. */
+  whatsapp_instance?: string | null;
   iat: number;
   exp: number;
 }

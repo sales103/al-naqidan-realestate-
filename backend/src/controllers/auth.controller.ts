@@ -114,7 +114,7 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
       success: true,
       data: {
         token,
-        user: { id: user.id, email: user.email, full_name: user.full_name, full_name_ar: user.full_name_ar, role: user.role, avatar_url: user.avatar_url },
+        user: { id: user.id, email: user.email, full_name: user.full_name, full_name_ar: user.full_name_ar, role: user.role, avatar_url: user.avatar_url, whatsapp_instance: user.whatsapp_instance ?? null },
       },
     });
   } catch (error) { next(error); }
@@ -126,7 +126,7 @@ export const me = async (req: Request, res: Response, next: NextFunction): Promi
     const db = getDatabase();
     const user = await db('users')
       .where('id', req.user!.user_id)
-      .select('id', 'email', 'phone', 'full_name', 'full_name_ar', 'role', 'avatar_url', 'last_login_at', 'preferences')
+      .select('id', 'email', 'phone', 'full_name', 'full_name_ar', 'role', 'avatar_url', 'last_login_at', 'preferences', 'whatsapp_instance')
       .first() as User | undefined;
     if (!user) throw new AppError(404, 'User not found');
     res.json({ success: true, data: user });

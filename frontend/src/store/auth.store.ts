@@ -8,6 +8,7 @@ interface AuthUser {
   full_name_ar?: string;
   role: string;
   avatar_url?: string;
+  whatsapp_instance?: string | null;
 }
 
 interface AuthState {

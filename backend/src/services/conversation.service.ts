@@ -277,9 +277,18 @@ export class ConversationService {
       }
 
       const { client, isNew } = await clientService.findOrCreateByWhatsapp(chatId, phone, payload.data.pushName);
-      const conversation = await this.findOrCreateConversation(client.id, chatId);
-      // Remember which WhatsApp number received this message so we reply from the same one.
-      (conversation as any).wa_instance = payload.instance || config.whatsapp.instanceName;
+      const conversation = await this.findOrCreateConversation(client.id, chatId, payload.instance || config.whatsapp.instanceName);
+      // Which WhatsApp number received this message. Drives the reply-from
+      // number and the dashboard's per-agent visibility, so persist it —
+      // and backfill any conversation created before this column existed.
+      const incomingInstance = payload.instance || config.whatsapp.instanceName;
+      (conversation as any).wa_instance = incomingInstance;
+      if (!(conversation as any).wa_instance_persisted && incomingInstance) {
+        this.db('conversations')
+          .where('id', conversation.id)
+          .update({ wa_instance: incomingInstance })
+          .catch((e: any) => logger.warn('wa_instance persist failed', { error: e?.message }));
+      }
       const { content, messageType, mediaUrl, mimeType, lat, lng, locationName } = this.extractMessageContent(payload);
 
       // Persisting the message must not stop us from answering the customer.
@@ -1176,15 +1185,20 @@ export class ConversationService {
   // Helpers
   // ===========================================================================
 
-  private async findOrCreateConversation(clientId: string, chatId: string): Promise<Conversation> {
+  private async findOrCreateConversation(clientId: string, chatId: string, instance?: string): Promise<Conversation> {
     const existing = await this.db('conversations').where('whatsapp_chat_id', chatId).first() as Conversation | undefined;
-    if (existing) return existing;
+    if (existing) {
+      // Mark that the stored value (if any) is authoritative, so the caller
+      // does not redundantly write it on every message.
+      (existing as any).wa_instance_persisted = Boolean((existing as any).wa_instance);
+      return existing;
+    }
     // Same concurrent-webhook race as findOrCreateByWhatsapp: re-read rather
     // than fail, so a burst of messages can't split one chat into two threads.
     let conv: Conversation | undefined;
     try {
       [conv] = await this.db('conversations')
-        .insert({ client_id: clientId, whatsapp_chat_id: chatId, is_active: true, is_ai_enabled: true, unread_count: 0 })
+        .insert({ client_id: clientId, whatsapp_chat_id: chatId, is_active: true, is_ai_enabled: true, unread_count: 0, wa_instance: instance })
         .returning('*') as Conversation[];
     } catch (e: any) {
       if (e?.code === '23505') {
@@ -1194,6 +1208,7 @@ export class ConversationService {
       throw e;
     }
     if (!conv) throw new Error('Failed to create conversation');
+    (conv as any).wa_instance_persisted = true;
     return conv;
   }
 

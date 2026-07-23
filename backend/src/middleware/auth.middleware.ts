@@ -30,14 +30,14 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
     const { getDatabase } = await import('../database/connection.js');
     const user = await getDatabase()('users')
       .where('id', payload.user_id)
-      .select('id', 'role', 'is_active')
+      .select('id', 'role', 'is_active', 'whatsapp_instance')
       .first();
 
     if (!user || user.is_active === false) {
       res.status(401).json({ success: false, error: 'الحساب غير مفعّل — راجع الإدارة' });
       return;
     }
-    req.user = { ...payload, role: user.role };
+    req.user = { ...payload, role: user.role, whatsapp_instance: user.whatsapp_instance ?? null };
     next();
   } catch (err) {
     // A database blip must not lock every user out of the system; the token

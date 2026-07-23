@@ -100,6 +100,17 @@ const MIGRATIONS: { name: string; sql: string }[] = [
       CREATE INDEX IF NOT EXISTS properties_entrance_idx  ON properties (entrance_type);
     `,
   },
+  {
+    // Which WhatsApp number a conversation belongs to. It was only ever set on
+    // the in-memory object at runtime, so there was no way to scope the
+    // dashboard: every agent saw every conversation. Persist it so a sales
+    // agent sees only their own number's chats and a manager can filter by one.
+    name: '008_conversation_wa_instance',
+    sql: `
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS wa_instance VARCHAR(64);
+      CREATE INDEX IF NOT EXISTS conversations_wa_instance_idx ON conversations (wa_instance);
+    `,
+  },
 ];
 
 async function ensureMigrationsTable(): Promise<void> {
