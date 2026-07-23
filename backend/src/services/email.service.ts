@@ -24,7 +24,9 @@ export async function getEmailSettings(): Promise<EmailSettings> {
     const db = getDatabase();
     const row = await db('system_settings').where('key', 'smtp').first();
     if (row?.value) {
-      const v = row.value;
+      const v = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
+
+      logger.info('Email settings loaded', { provider: v.provider, hasResendKey: Boolean(v.resend_api_key), hasSmtpHost: Boolean(v.host) });
 
       if (v.provider === 'resend' && v.resend_api_key) {
         return {
@@ -48,7 +50,7 @@ export async function getEmailSettings(): Promise<EmailSettings> {
         };
       }
     }
-  } catch { /* fall through */ }
+  } catch (err) { logger.error('Failed to load email settings', { error: (err as any)?.message }); }
 
   return {
     provider: 'smtp',
@@ -95,6 +97,7 @@ async function sendViaSmtp(s: EmailSettings, to: string, subject: string, html: 
 
 export async function sendMail(to: string, subject: string, html: string): Promise<void> {
   const s = await getEmailSettings();
+  logger.info('Sending email', { to, provider: s.provider });
 
   if (s.provider === 'resend') {
     await sendViaResend(s, to, subject, html);
@@ -102,7 +105,7 @@ export async function sendMail(to: string, subject: string, html: string): Promi
     await sendViaSmtp(s, to, subject, html);
   }
 
-  logger.info('Email sent', { to, subject, provider: s.provider });
+  logger.info('Email sent successfully', { to, subject, provider: s.provider });
 }
 
 // Keep backward compatibility
