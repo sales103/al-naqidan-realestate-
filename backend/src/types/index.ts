@@ -39,6 +39,9 @@ export interface User {
   is_active: boolean;
   avatar_url?: string;
   whatsapp_number?: string;
+  /** Which Evolution instance (WhatsApp number) this user works from.
+   *  Scopes which conversations they can see; null means unassigned. */
+  whatsapp_instance?: string | null;
   last_login_at?: Date;
   preferences: Record<string, unknown>;
   created_at: Date;
