@@ -85,12 +85,14 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
     let imported = 0;
     const failures: string[] = [];
 
+    let skipped = 0;
+
     if (type === 'clients') {
       for (const row of rows) {
         const phone = String(row['الجوال'] ?? row['phone'] ?? row['Phone'] ?? '').replace(/\D/g, '');
         if (!phone) continue;
         try {
-          await db('clients').insert({
+          const inserted = await db('clients').insert({
             full_name: String(row['الاسم'] ?? row['name'] ?? phone),
             full_name_ar: String(row['الاسم'] ?? row['name'] ?? ''),
             phone,
@@ -102,9 +104,16 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
             purpose: String(row['الغرض'] ?? row['purpose'] ?? 'buy'),
             ai_summary: String(row['ملخص'] ?? row['notes'] ?? ''),
             first_contact_at: new Date(),
-          }).onConflict('phone').ignore();
-          imported++;
-        } catch { /* skip invalid */ }
+          }).onConflict('phone').ignore().returning('id');
+
+          if (inserted.length > 0) imported++;
+          else skipped++;   // already on file — not a failure, but not an import either
+        } catch (err: any) {
+          // A duplicate whatsapp_id reaches here rather than the onConflict
+          // clause above, and is still just an existing client.
+          if (err?.code === '23505') { skipped++; continue; }
+          if (failures.length < 5) failures.push(`${phone}: ${err?.message ?? 'خطأ غير معروف'}`);
+        }
       }
     } else {
       // The live database has drifted from the migration files — it carries columns
@@ -293,32 +302,33 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
     }
 
     // Surface why rows were rejected — a silent "0 imported" hides the real cause.
-    const message = failures.length
-      ? `تم استيراد ${imported} من ${rows.length} سجل. سبب الفشل: ${failures.join(' | ')}`
-      : `تم استيراد ${imported} من ${rows.length} سجل`;
-    res.json({ success: true, data: { imported, total: rows.length, failures }, message });
+    const parts = [`تم استيراد ${imported} من ${rows.length} سجل`];
+    if (skipped) parts.push(`${skipped} سجل موجود مسبقاً (تم تخطيه)`);
+    if (failures.length) parts.push(`سبب الفشل: ${failures.join(' | ')}`);
+    res.json({
+      success: true,
+      data: { imported, skipped, total: rows.length, failures },
+      message: parts.join('. '),
+    });
   } catch (error) { next(error); }
 });
 
-// POST /api/sheets/import-properties (legacy CSV)
-router.post('/import-properties', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  try {
-    const { csvData } = req.body as { csvData?: string };
-    if (!csvData) { res.json({ success: true, data: { imported: 0 }, message: 'أرسل البيانات في حقل csvData' }); return; }
-    const db = getDatabase();
-    const lines = csvData.trim().split('\n').slice(1);
-    let imported = 0;
-    const riyadhCity = await db('cities').where('name_ar', 'like', '%الرياض%').first();
-    for (const line of lines) {
-      const cols = line.split(',').map((c: string) => c.replace(/^"|"$/g, '').trim());
-      if (!cols[0]) continue;
-      try {
-        await db('properties').insert({ title_ar: cols[0]??'', title_en: cols[1]??'', property_type: (cols[2]??'apartment') as any, price: parseFloat(cols[3]??'0')||0, city_id: riyadhCity?.id, area_sqm: parseFloat(cols[5]??'0')||null, rooms: parseInt(cols[6]??'0')||null, bathrooms: parseInt(cols[7]??'0')||null, status: (cols[8]??'available') as any, description_ar: cols[9]??'', listing_type: 'sale' }).onConflict().ignore();
-        imported++;
-      } catch { /* skip */ }
-    }
-    res.json({ success: true, data: { imported }, message: `تم استيراد ${imported} عقار` });
-  } catch (error) { next(error); }
+// POST /api/sheets/import-properties (retired)
+//
+// This accepted raw CSV and split each line on ',', so any quoted field
+// containing a comma — descriptions routinely do — shifted every subsequent
+// column and wrote corrupted rows. It also inserted a hardcoded column set the
+// live schema has since drifted away from, and counted rows skipped by
+// onConflict().ignore() as successful imports.
+//
+// /upload-excel supersedes it: it detects the header row, adapts to the actual
+// table columns, and reports per-row failures. Returning an explicit error is
+// safer than leaving a path that quietly corrupts a client's data.
+router.post('/import-properties', async (_req: Request, res: Response): Promise<void> => {
+  res.status(410).json({
+    success: false,
+    error: 'هذه الطريقة لم تعد مدعومة. استخدم رفع ملف Excel من صفحة الاستيراد.',
+  });
 });
 
 export default router;

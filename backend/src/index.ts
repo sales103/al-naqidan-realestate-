@@ -1,6 +1,18 @@
 ﻿// Catch ALL errors early before any imports
+// An uncaught exception leaves the process in genuinely unknown state, so
+// exiting and letting the platform restart is right.
 process.on('uncaughtException', (err) => { console.error('[FATAL] uncaughtException:', err); process.exit(1); });
-process.on('unhandledRejection', (err) => { console.error('[FATAL] unhandledRejection:', err); process.exit(1); });
+
+// A rejected promise does NOT justify the same response. This service handles
+// every customer's WhatsApp conversation in one process, and much of that work
+// is deliberately fire-and-forget (delivery receipts, analytics, typing
+// indicators). Exiting on one stray rejection turned a single customer's edge
+// case into a total outage for everyone, plus a restart loop if it recurred.
+// Log it loudly — with the stack, so it still gets fixed — and keep serving.
+process.on('unhandledRejection', (reason: unknown) => {
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  console.error('[unhandledRejection] service kept running:', err.stack ?? err.message);
+});
 console.log('[BOOT] Starting Al-Naqidan backend...');
 
 import 'dotenv/config';
