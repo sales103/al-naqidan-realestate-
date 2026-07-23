@@ -51,7 +51,7 @@ router.get('/:key', requireAdmin, async (req: Request, res: Response, next: Next
     // Never send secrets back to the browser — report only whether one is stored,
     // so the UI can show "saved" without ever displaying the value.
     const value = { ...(row.value ?? {}) };
-    const SECRETS = ['openai_key', 'api_key', 'password', 'smtp_password'];
+    const SECRETS = ['openai_key', 'api_key', 'password', 'smtp_password', 'resend_api_key'];
     for (const k of SECRETS) {
       if (value[k]) { value[`${k}_set`] = true; delete value[k]; }
     }
@@ -71,7 +71,7 @@ router.put('/:key', requireAdmin, async (req: Request, res: Response, next: Next
     const userId = (req as any).user?.user_id;
     const key = req.params['key'];
 
-    const SECRET_FIELDS = ['openai_key', 'api_key', 'password', 'smtp_password'];
+    const SECRET_FIELDS = ['openai_key', 'api_key', 'password', 'smtp_password', 'resend_api_key'];
     const existing = await db('system_settings').where('key', key).first();
     const merged: Record<string, any> = { ...value };
     for (const field of SECRET_FIELDS) {

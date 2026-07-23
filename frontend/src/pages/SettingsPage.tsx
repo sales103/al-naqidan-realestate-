@@ -356,23 +356,42 @@ function AISettings() {
 /* ── Email Settings ─────────────────────────────────────────────────────────── */
 function EmailSettings() {
   const qc = useQueryClient();
-  const [form, setForm] = useState({ host: '', port: '587', user: '', password: '', from: '', from_name: '' });
+  const [provider, setProvider] = useState<'resend' | 'smtp'>('resend');
+  const [form, setForm] = useState({
+    host: '', port: '587', user: '', password: '', from: '', from_name: '',
+    resend_api_key: '', resend_from: '',
+  });
   const [showPass, setShowPass] = useState(false);
+  const [showResendKey, setShowResendKey] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
   const { data, isLoading } = useQuery({ queryKey: ['settings', 'smtp'], queryFn: () => settingsApi.get('smtp') });
+  const resendKeyIsSaved = Boolean((data as any)?.data?.data?.resend_api_key_set);
 
   useEffect(() => {
     const v = (data as any)?.data?.data;
-    if (v) setForm({ host: v.host ?? 'smtp.gmail.com', port: String(v.port ?? 587), user: v.user ?? '', password: '', from: v.from ?? '', from_name: v.from_name ?? '' });
+    if (v) {
+      setProvider(v.provider === 'smtp' ? 'smtp' : 'resend');
+      setForm({
+        host: v.host ?? 'smtp.gmail.com', port: String(v.port ?? 587),
+        user: v.user ?? '', password: '', from: v.from ?? '', from_name: v.from_name ?? '',
+        resend_api_key: '', resend_from: v.resend_from ?? '',
+      });
+    }
   }, [data]);
 
   const saveMut = useMutation({
     mutationFn: () => settingsApi.save('smtp', {
+      provider,
+      // SMTP fields
       host: form.host, port: Number(form.port), user: form.user,
       ...(form.password ? { password: form.password } : {}),
+      // Resend fields
+      ...(form.resend_api_key ? { resend_api_key: form.resend_api_key } : {}),
+      resend_from: form.resend_from || undefined,
+      // Shared
       from: form.from || form.user, from_name: form.from_name || 'مكتب النقيدان',
     }),
     onSuccess: () => { toast.success('تم حفظ إعدادات البريد'); qc.invalidateQueries({ queryKey: ['settings'] }); },
@@ -380,10 +399,11 @@ function EmailSettings() {
   });
 
   const testEmail = async () => {
-    if (!form.user) { toast.error('أدخل البريد الإلكتروني أولاً'); return; }
+    const testTo = form.from || form.user;
+    if (!testTo) { toast.error('أدخل البريد الإلكتروني أولاً'); return; }
     setTesting(true); setTestResult(null);
     try {
-      await api.post('/settings/test-email', { to: form.user });
+      await api.post('/settings/test-email', { to: testTo });
       setTestResult({ ok: true, msg: 'تم إرسال بريد تجريبي — تحقق من صندوقك' });
     } catch (e: any) {
       setTestResult({ ok: false, msg: e.response?.data?.error ?? 'فشل الإرسال — تحقق من الإعدادات' });
@@ -392,7 +412,7 @@ function EmailSettings() {
 
   if (isLoading) return <LoadingPulse />;
 
-  const presets = [
+  const smtpPresets = [
     { label: 'Gmail',   host: 'smtp.gmail.com',     port: '587', color: '#EA4335' },
     { label: 'Outlook', host: 'smtp.office365.com',  port: '587', color: '#0078D4' },
     { label: 'Yahoo',   host: 'smtp.mail.yahoo.com', port: '465', color: '#6001D2' },
@@ -409,80 +429,207 @@ function EmailSettings() {
         </div>
       </div>
 
-      <Section num={1} title="مزود البريد" color="#059669">
-        <div className="flex gap-2 flex-wrap">
-          {presets.map(p => {
-            const active = form.host === p.host;
+      {/* Provider Selection */}
+      <Section num={1} title="طريقة الإرسال" color="#059669">
+        <div className="grid grid-cols-2 gap-3">
+          {([
+            { id: 'resend' as const, label: 'Resend', badge: 'موصى به', desc: 'يعمل على جميع الاستضافات', color: '#000' },
+            { id: 'smtp' as const, label: 'SMTP', badge: 'تقليدي', desc: 'Gmail / Outlook / Yahoo', color: '#3B5BDB' },
+          ]).map(p => {
+            const active = provider === p.id;
             return (
-              <button key={p.label} type="button"
-                onClick={() => { set('host', p.host); set('port', p.port); }}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl border-2 text-sm font-semibold transition-all"
+              <button key={p.id} type="button" onClick={() => setProvider(p.id)}
+                className="p-4 rounded-xl border-2 text-right transition-all duration-200"
                 style={{
                   borderColor: active ? p.color : 'rgba(59,91,219,0.1)',
-                  background: active ? `${p.color}10` : '#fff',
-                  color: active ? p.color : '#5A6882',
-                  boxShadow: active ? `0 2px 8px ${p.color}25` : 'none',
+                  background: active ? `${p.color}08` : '#fff',
+                  boxShadow: active ? `0 2px 12px ${p.color}15` : 'none',
                 }}>
-                {active && <CheckIcon className="w-3.5 h-3.5" />}
-                {p.label}
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{
+                    background: active ? `${p.color}15` : 'rgba(59,91,219,0.06)',
+                    color: active ? p.color : '#7A8FAA',
+                  }}>{p.badge}</span>
+                  {active && <CheckCircleIcon className="w-4 h-4" style={{ color: p.color }} />}
+                </div>
+                <p className="font-bold" style={{ color: active ? p.color : '#0F1C35' }}>{p.label}</p>
+                <p className="text-xs mt-0.5" style={{ color: '#7A8FAA' }}>{p.desc}</p>
               </button>
             );
           })}
         </div>
+      </Section>
 
-        <div className="grid grid-cols-3 gap-4">
-          <div className="col-span-2">
-            <label className="label">SMTP Host</label>
-            <input value={form.host} onChange={e => set('host', e.target.value)} className="input" placeholder="smtp.gmail.com" dir="ltr" />
-          </div>
+      {/* Resend Settings */}
+      {provider === 'resend' && (
+        <Section num={2} title="إعدادات Resend" color="#059669">
           <div>
-            <label className="label">Port</label>
-            <input value={form.port} onChange={e => set('port', e.target.value)} className="input" type="number" dir="ltr" />
+            <label className="label flex items-center gap-2">
+              API Key
+              {resendKeyIsSaved && (
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: 'rgba(5,150,105,0.1)', color: '#059669' }}>
+                  ✓ مفتاح محفوظ
+                </span>
+              )}
+            </label>
+            <div className="relative">
+              <input value={form.resend_api_key} onChange={e => set('resend_api_key', e.target.value)}
+                type={showResendKey ? 'text' : 'password'} className="input pl-10 font-mono text-sm"
+                placeholder={resendKeyIsSaved ? '•••••••••• (اتركه فارغاً للإبقاء على المفتاح)' : 're_xxxxxxxxx...'} dir="ltr" />
+              <button type="button" onClick={() => setShowResendKey(!showResendKey)}
+                className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: '#94A3B8' }}>
+                {showResendKey ? <EyeSlashIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
-        </div>
 
-        <div>
-          <label className="label">البريد الإلكتروني</label>
-          <input value={form.user} onChange={e => set('user', e.target.value)} className="input" placeholder="info@company.com" dir="ltr" type="email" />
-        </div>
-
-        <div>
-          <label className="label">كلمة المرور (App Password)</label>
-          <div className="relative">
-            <input value={form.password} onChange={e => set('password', e.target.value)}
-              type={showPass ? 'text' : 'password'} className="input pl-10"
-              placeholder="اتركه فارغاً إذا لم تريد تغييره" dir="ltr" />
-            <button type="button" onClick={() => setShowPass(!showPass)}
-              className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: '#94A3B8' }}>
-              {showPass ? <EyeSlashIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
-            </button>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="label">بريد الإرسال (From)</label>
-            <input value={form.from} onChange={e => set('from', e.target.value)} className="input" dir="ltr" type="email" placeholder="noreply@company.com" />
+            <input value={form.resend_from} onChange={e => set('resend_from', e.target.value)}
+              className="input" dir="ltr" type="email"
+              placeholder="onboarding@resend.dev (مجاني) أو you@yourdomain.com" />
+            <p className="text-xs mt-1.5" style={{ color: '#7A8FAA' }}>
+              المجاني يرسل من <span className="font-mono" style={{ color: '#059669' }}>onboarding@resend.dev</span> — لاستخدام دومينك الخاص أضفه في لوحة Resend
+            </p>
           </div>
-          <div>
-            <label className="label">اسم المرسل</label>
-            <input value={form.from_name} onChange={e => set('from_name', e.target.value)} className="input" placeholder="مكتب النقيدان" />
-          </div>
-        </div>
 
-        {testResult && (
-          <div className="flex items-center gap-2.5 p-3.5 rounded-xl text-sm font-medium" style={{
-            background: testResult.ok ? 'rgba(5,150,105,0.08)' : 'rgba(239,68,68,0.08)',
-            border: `1px solid ${testResult.ok ? 'rgba(5,150,105,0.2)' : 'rgba(239,68,68,0.2)'}`,
-            color: testResult.ok ? '#059669' : '#DC2626',
-          }}>
-            {testResult.ok
-              ? <CheckCircleIcon className="w-5 h-5 flex-shrink-0" />
-              : <XMarkIcon className="w-5 h-5 flex-shrink-0" />}
-            {testResult.msg}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">بريد الرد (Reply-To)</label>
+              <input value={form.from} onChange={e => set('from', e.target.value)} className="input" dir="ltr" type="email" placeholder="office@company.com" />
+              <p className="text-xs mt-1" style={{ color: '#7A8FAA' }}>عندما يرد الموظف، يصل الرد لهذا البريد</p>
+            </div>
+            <div>
+              <label className="label">اسم المرسل</label>
+              <input value={form.from_name} onChange={e => set('from_name', e.target.value)} className="input" placeholder="مكتب النقيدان" />
+            </div>
           </div>
-        )}
-      </Section>
+
+          <div className="p-4 rounded-xl" style={{ background: 'rgba(5,150,105,0.05)', border: '1px solid rgba(5,150,105,0.12)' }}>
+            <p className="font-bold text-sm mb-2" style={{ color: '#059669' }}>خطوات إعداد Resend (مجاني)</p>
+            <ol className="space-y-1.5 text-sm" style={{ color: '#5A6882' }}>
+              {[
+                <>اذهب إلى <span className="font-mono px-1.5 rounded" style={{ background: 'rgba(5,150,105,0.1)', color: '#059669' }}>resend.com</span> وأنشئ حساب مجاني</>,
+                'من القائمة اختر API Keys ← أنشئ مفتاح جديد',
+                'انسخ المفتاح والصقه في حقل API Key أعلاه',
+                'جاهز! يرسل 100 بريد/يوم مجاناً ويعمل على أي استضافة',
+              ].map((step, i) => (
+                <li key={i} className="flex items-start gap-2">
+                  <span className="w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5"
+                    style={{ background: 'rgba(5,150,105,0.15)', color: '#059669' }}>{i + 1}</span>
+                  <span>{step}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </Section>
+      )}
+
+      {/* SMTP Settings */}
+      {provider === 'smtp' && (
+        <Section num={2} title="إعدادات SMTP" color="#3B5BDB">
+          <div className="flex gap-2 flex-wrap">
+            {smtpPresets.map(p => {
+              const active = form.host === p.host;
+              return (
+                <button key={p.label} type="button"
+                  onClick={() => { set('host', p.host); set('port', p.port); }}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl border-2 text-sm font-semibold transition-all"
+                  style={{
+                    borderColor: active ? p.color : 'rgba(59,91,219,0.1)',
+                    background: active ? `${p.color}10` : '#fff',
+                    color: active ? p.color : '#5A6882',
+                    boxShadow: active ? `0 2px 8px ${p.color}25` : 'none',
+                  }}>
+                  {active && <CheckIcon className="w-3.5 h-3.5" />}
+                  {p.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
+            <div className="col-span-2">
+              <label className="label">SMTP Host</label>
+              <input value={form.host} onChange={e => set('host', e.target.value)} className="input" placeholder="smtp.gmail.com" dir="ltr" />
+            </div>
+            <div>
+              <label className="label">Port</label>
+              <input value={form.port} onChange={e => set('port', e.target.value)} className="input" type="number" dir="ltr" />
+            </div>
+          </div>
+
+          <div>
+            <label className="label">البريد الإلكتروني</label>
+            <input value={form.user} onChange={e => set('user', e.target.value)} className="input" placeholder="info@company.com" dir="ltr" type="email" />
+          </div>
+
+          <div>
+            <label className="label">كلمة المرور (App Password)</label>
+            <div className="relative">
+              <input value={form.password} onChange={e => set('password', e.target.value)}
+                type={showPass ? 'text' : 'password'} className="input pl-10"
+                placeholder="اتركه فارغاً إذا لم تريد تغييره" dir="ltr" />
+              <button type="button" onClick={() => setShowPass(!showPass)}
+                className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: '#94A3B8' }}>
+                {showPass ? <EyeSlashIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">بريد الإرسال (From)</label>
+              <input value={form.from} onChange={e => set('from', e.target.value)} className="input" dir="ltr" type="email" placeholder="noreply@company.com" />
+            </div>
+            <div>
+              <label className="label">اسم المرسل</label>
+              <input value={form.from_name} onChange={e => set('from_name', e.target.value)} className="input" placeholder="مكتب النقيدان" />
+            </div>
+          </div>
+
+          <div className="flex items-start gap-2.5 p-3 rounded-xl text-sm" style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)' }}>
+            <ExclamationCircleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: '#DC2626' }} />
+            <p style={{ color: '#7A3030' }}>
+              بعض الاستضافات (مثل Railway) تحظر منافذ SMTP. إذا فشل الإرسال، استخدم Resend بدلاً من ذلك.
+            </p>
+          </div>
+
+          {form.host === 'smtp.gmail.com' && (
+            <div className="p-4 rounded-xl" style={{ background: 'rgba(200,168,75,0.07)', border: '1px solid rgba(200,168,75,0.18)' }}>
+              <p className="font-bold text-sm mb-2" style={{ color: '#A8892E' }}>خطوات Gmail App Password</p>
+              <ol className="space-y-1.5 text-sm" style={{ color: '#5A6882' }}>
+                {[
+                  <>اذهب إلى <span className="font-mono px-1.5 rounded" style={{ background: 'rgba(200,168,75,0.12)', color: '#A8892E' }}>myaccount.google.com</span></>,
+                  'الأمان ← التحقق بخطوتين ← فعّله',
+                  'ابحث عن "App passwords"',
+                  'اختر "Other" واكتب اسم التطبيق',
+                  'انسخ الـ 16 حرف والصقها في حقل كلمة المرور',
+                ].map((step, i) => (
+                  <li key={i} className="flex items-start gap-2">
+                    <span className="w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5"
+                      style={{ background: 'rgba(200,168,75,0.2)', color: '#A8892E' }}>{i + 1}</span>
+                    <span>{step}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+        </Section>
+      )}
+
+      {testResult && (
+        <div className="flex items-center gap-2.5 p-3.5 rounded-xl text-sm font-medium" style={{
+          background: testResult.ok ? 'rgba(5,150,105,0.08)' : 'rgba(239,68,68,0.08)',
+          border: `1px solid ${testResult.ok ? 'rgba(5,150,105,0.2)' : 'rgba(239,68,68,0.2)'}`,
+          color: testResult.ok ? '#059669' : '#DC2626',
+        }}>
+          {testResult.ok
+            ? <CheckCircleIcon className="w-5 h-5 flex-shrink-0" />
+            : <XMarkIcon className="w-5 h-5 flex-shrink-0" />}
+          {testResult.msg}
+        </div>
+      )}
 
       <div className="flex gap-3">
         <SaveBtn pending={saveMut.isPending} label="حفظ الإعدادات" onClick={() => saveMut.mutate()} />
@@ -493,27 +640,6 @@ function EmailSettings() {
           {testing ? 'جاري الإرسال...' : 'إرسال تجريبي'}
         </button>
       </div>
-
-      {form.host === 'smtp.gmail.com' && (
-        <div className="p-4 rounded-xl" style={{ background: 'rgba(200,168,75,0.07)', border: '1px solid rgba(200,168,75,0.18)' }}>
-          <p className="font-bold text-sm mb-2" style={{ color: '#A8892E' }}>خطوات Gmail App Password</p>
-          <ol className="space-y-1.5 text-sm" style={{ color: '#5A6882' }}>
-            {[
-              <>اذهب إلى <span className="font-mono px-1.5 rounded" style={{ background: 'rgba(200,168,75,0.12)', color: '#A8892E' }}>myaccount.google.com</span></>,
-              'الأمان ← التحقق بخطوتين ← فعّله',
-              'ابحث عن "App passwords"',
-              'اختر "Other" واكتب اسم التطبيق',
-              'انسخ الـ 16 حرف والصقها في حقل كلمة المرور',
-            ].map((step, i) => (
-              <li key={i} className="flex items-start gap-2">
-                <span className="w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5"
-                  style={{ background: 'rgba(200,168,75,0.2)', color: '#A8892E' }}>{i + 1}</span>
-                <span>{step}</span>
-              </li>
-            ))}
-          </ol>
-        </div>
-      )}
     </div>
   );
 }
