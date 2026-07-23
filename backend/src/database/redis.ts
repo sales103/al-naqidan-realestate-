@@ -12,22 +12,31 @@ export const isRedisAvailable = (): boolean => redisAvailable;
 export const initRedis = async (): Promise<Redis | null> => {
   if (redisClient) return redisClient;
 
+  const url = process.env['REDIS_URL'];
+
   // Skip Redis if host is localhost/redis and we're in production without explicit config
   const host = config.redis.host;
-  if (config.app.isProduction && (host === 'localhost' || host === 'redis' || host === '127.0.0.1')) {
+  if (!url && config.app.isProduction && (host === 'localhost' || host === 'redis' || host === '127.0.0.1')) {
     logger.warn('Redis skipped in production (no valid host configured) — caching disabled');
     return null;
   }
 
-  redisClient = new Redis({
-    host,
-    port: config.redis.port,
-    password: config.redis.password || undefined,
-    retryStrategy: (times) => (times > 3 ? null : Math.min(times * 200, 2000)),
+  const commonOpts = {
+    retryStrategy: (times: number) => (times > 3 ? null : Math.min(times * 200, 2000)),
     maxRetriesPerRequest: 1,
     lazyConnect: true,
     connectTimeout: 5000,
-  });
+  };
+
+  // Railway (and most hosts) provide a single REDIS_URL — prefer it when set.
+  redisClient = url
+    ? new Redis(url, commonOpts)
+    : new Redis({
+        host,
+        port: config.redis.port,
+        password: config.redis.password || undefined,
+        ...commonOpts,
+      });
 
   redisClient.on('connect', () => { logger.info('Redis connected'); redisAvailable = true; });
   redisClient.on('error', (err) => logger.warn('Redis error (non-fatal)', { error: err.message }));
