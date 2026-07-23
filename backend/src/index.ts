@@ -90,7 +90,15 @@ app.use(rateLimit({
   message: { success: false, error: 'Too many requests, please try again later' },
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => req.path === '/health' || req.path === '/metrics',
+  skip: (req) =>
+    req.path === '/health' ||
+    req.path === '/metrics' ||
+    // Every WhatsApp webhook arrives from Evolution's single server IP, so a
+    // global IP limiter counts all customers into one bucket — on a busy day
+    // it 429s Evolution and the bot goes silent for everyone. The pipeline has
+    // its own per-customer rate limiting (see conversation.service), so exempt
+    // the webhook here.
+    req.path.startsWith('/api/webhooks'),
 }));
 
 // =============================================================================
