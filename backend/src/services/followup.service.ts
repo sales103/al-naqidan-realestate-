@@ -162,18 +162,17 @@ export async function updateStaleClients(): Promise<void> {
     }
 
     // Clients with follow_up scheduled but passed → set next_follow_up_at
-    const nextFollowUps = await db('follow_ups as fu')
-      .join('clients as c', 'fu.client_id', 'c.id')
-      .where('fu.status', 'pending')
-      .where('fu.is_cancelled', false)
-      .where('fu.scheduled_at', '>', now)
-      .orderBy('fu.scheduled_at', 'asc')
-      .select('fu.client_id', 'fu.scheduled_at')
-      .distinct('fu.client_id');
+    const nextFollowUps = await db('follow_ups')
+      .where('status', 'pending')
+      .where('is_cancelled', false)
+      .where('scheduled_at', '>', now)
+      .groupBy('client_id')
+      .select('client_id')
+      .min('scheduled_at as next_at');
 
-    for (const row of nextFollowUps) {
+    for (const row of nextFollowUps as any[]) {
       await db('clients').where('id', row.client_id).update({
-        next_follow_up_at: row.scheduled_at,
+        next_follow_up_at: row.next_at,
         updated_at: now,
       });
     }
@@ -210,20 +209,40 @@ export async function notifyHotLeads(): Promise<void> {
 
     if (managers.length === 0) return;
 
+    // Already-pending alerts for these same leads. This job runs every 30
+    // minutes against a 2-hour window, so without this every lead was
+    // re-announced to every manager four times over — and onConflict().ignore()
+    // did nothing, since there is no unique constraint to conflict on.
+    const leadIds = hotLeads.map((l: any) => l.id);
+    const existing = await db('notifications')
+      .whereIn('user_id', managers.map((m: any) => m.id))
+      .where('notification_type', 'new_client')
+      .whereNull('read_at')
+      .select('user_id', 'data');
+    const alreadyAlerted = new Set(
+      existing
+        .filter((n: any) => leadIds.includes(n.data?.client_id))
+        .map((n: any) => `${n.user_id}:${n.data?.client_id}`)
+    );
+
     const notifications = managers.flatMap((mgr: any) =>
-      hotLeads.map((lead: any) => ({
-        user_id: mgr.id,
-        notification_type: 'new_client',
-        title: `🔥 عميل مهم بدون مستشار — ${lead.full_name}`,
-        body: `العميل في مرحلة "${lead.status}" ولم يُعيَّن له مستشار بعد`,
-        data: { client_id: lead.id },
-        is_read: false,
-        created_at: new Date(),
-      }))
+      hotLeads
+        .filter((lead: any) => !alreadyAlerted.has(`${mgr.id}:${lead.id}`))
+        .map((lead: any) => ({
+          user_id: mgr.id,
+          notification_type: 'new_client',
+          title: `🔥 عميل مهم بدون مستشار — ${lead.full_name}`,
+          body: `العميل في مرحلة "${lead.status}" ولم يُعيَّن له مستشار بعد`,
+          data: { client_id: lead.id },
+          // The table records read state as a nullable timestamp. Writing
+          // is_read threw on every run, so this job never delivered anything.
+          read_at: null,
+          created_at: new Date(),
+        }))
     );
 
     if (notifications.length > 0) {
-      await db('notifications').insert(notifications).onConflict().ignore();
+      await db('notifications').insert(notifications);
       logger.info(`Sent ${notifications.length} hot-lead notifications`);
     }
   } catch (error) {
