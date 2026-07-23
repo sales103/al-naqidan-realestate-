@@ -16,10 +16,15 @@ router.get('/', async (req, res, next) => {
 
     const convs = await db('conversations as cv')
       .join('clients as cl', 'cv.client_id', 'cl.id')
-      .leftJoin('messages as m', function() {
-        this.on('m.conversation_id', 'cv.id')
-          .andOn(db.raw('m.created_at = (SELECT MAX(created_at) FROM messages WHERE conversation_id = cv.id)'));
-      })
+      .joinRaw(`
+        LEFT JOIN LATERAL (
+          SELECT content, message_type, created_at
+          FROM messages
+          WHERE conversation_id = cv.id
+          ORDER BY created_at DESC, id DESC
+          LIMIT 1
+        ) m ON TRUE
+      `)
       .select('cv.*', 'cl.full_name', 'cl.phone', 'm.content as last_message', 'm.message_type as last_message_type', 'm.created_at as last_message_at')
       .orderBy('cv.last_message_at', 'desc')
       .limit(Number(limit))

@@ -238,11 +238,16 @@ export class ConversationService {
       const whatsappMessageId = payload.data.key.id;
 
       // Duplicate check is an optimisation — never let it block a reply.
-      try {
-        const existing = await this.db('messages').where('whatsapp_message_id', whatsappMessageId).first();
-        if (existing) return;
-      } catch (e: any) {
-        logger.warn('dedup check skipped', { error: e?.message });
+      // Skip it entirely when the id is missing: querying for '' would match
+      // every outbound row that failed to get an id back from Evolution and
+      // silently drop a real customer message as a "duplicate".
+      if (whatsappMessageId) {
+        try {
+          const existing = await this.db('messages').where('whatsapp_message_id', whatsappMessageId).first();
+          if (existing) return;
+        } catch (e: any) {
+          logger.warn('dedup check skipped', { error: e?.message });
+        }
       }
 
       const { client, isNew } = await clientService.findOrCreateByWhatsapp(chatId, phone, payload.data.pushName);
@@ -334,7 +339,9 @@ export class ConversationService {
     const msgId = await whatsappService.sendText(client.phone, text, this.waInstance(conversation));
     this.saveMessage({
       conversation_id: conversation.id,
-      whatsapp_message_id: msgId,
+      // Evolution returns '' when the response carries no key; storing that
+      // would collide with the inbound dedup lookup, so leave it unset.
+      whatsapp_message_id: msgId || undefined,
       direction: 'outbound', message_type: 'text', status: 'sent',
       content: text, is_from_ai: isFromAI,
     }).catch((e: any) => logger.warn('outbound save failed', { error: e?.message }));
@@ -1031,7 +1038,7 @@ export class ConversationService {
       responseText = withMenuHint(responseText);
       const outboundMsgId = await whatsappService.sendText(client.phone, responseText, this.waInstance(conversation));
       await this.saveMessage({
-        conversation_id: conversation.id, whatsapp_message_id: outboundMsgId,
+        conversation_id: conversation.id, whatsapp_message_id: outboundMsgId || undefined,
         direction: 'outbound', message_type: 'text', status: 'sent',
         content: responseText, is_from_ai: true,
       });

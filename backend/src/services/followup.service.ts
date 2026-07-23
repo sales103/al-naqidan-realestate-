@@ -46,6 +46,7 @@ export async function processPendingFollowUps(): Promise<void> {
       .where('fu.is_cancelled', false)
       .where('fu.scheduled_at', '<=', now)
       .whereNull('fu.sent_at')
+      .leftJoin('conversations as cv', 'cv.client_id', 'c.id')
       .select(
         'fu.id',
         'fu.client_id',
@@ -53,6 +54,8 @@ export async function processPendingFollowUps(): Promise<void> {
         'c.phone',
         'c.full_name',
         'c.status as client_status',
+        'cv.id as conversation_id',
+        'cv.is_ai_enabled',
       )
       .limit(20); // Process max 20 at a time
 
@@ -71,11 +74,37 @@ export async function processPendingFollowUps(): Promise<void> {
           continue;
         }
 
+        // A member of staff has taken this conversation over — an automated
+        // nudge arriving on top of a human handling the customer undoes the
+        // takeover, so cancel rather than send.
+        if (fu.is_ai_enabled === false) {
+          await db('follow_ups').where('id', fu.id).update({
+            is_cancelled: true,
+            cancel_reason: 'human_took_over',
+          });
+          continue;
+        }
+
         const message = FOLLOWUP_MESSAGES[fu.follow_up_type];
         if (!message) continue;
 
         // Send via WhatsApp
-        await whatsappService.sendText(fu.phone, message);
+        const msgId = await whatsappService.sendText(fu.phone, message);
+
+        // Record it, so the follow-up is visible in the dashboard thread
+        // instead of the customer receiving a message no one on the team
+        // can see. Never let a logging failure re-send the message.
+        if (fu.conversation_id) {
+          await db('messages').insert({
+            conversation_id: fu.conversation_id,
+            whatsapp_message_id: msgId || null,
+            direction: 'outbound',
+            message_type: 'text',
+            status: 'sent',
+            content: message,
+            is_from_ai: true,
+          }).catch((e: any) => logger.warn('follow-up message not recorded', { error: e?.message }));
+        }
 
         // Mark as sent
         await db('follow_ups').where('id', fu.id).update({

@@ -72,7 +72,7 @@ async function sendOtpEmail(to: string, otp: string, name?: string) {
 export const login = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { email, password } = z.object({
-      email: z.string().email(),
+      email: z.string().email().transform((s) => s.trim().toLowerCase()),
       password: z.string().min(6),
     }).parse(req.body);
     const db = getDatabase();
@@ -83,7 +83,7 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
       throw new AppError(429, 'الحساب مقفل مؤقتاً بسبب محاولات كثيرة — انتظر 15 دقيقة');
     }
 
-    const user = await db('users').where({ email }).first() as User | undefined;
+    const user = await db('users').whereRaw('LOWER(email) = ?', [email]).first() as User | undefined;
     if (!user) {
       await recordFailedLogin(email);
       logSuspicious('login_unknown_email', req, { email });
@@ -162,12 +162,16 @@ export const logout = async (req: Request, res: Response): Promise<void> => {
 export const sendOtp = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { email, purpose } = z.object({
-      email: z.string().email('بريد إلكتروني غير صحيح'),
+      // Email is case-insensitive in practice. Normalising here keeps the
+      // cache key, the user lookup and the stored row in agreement —
+      // security.middleware lowercases its keys, so anything that skipped
+      // normalisation here silently missed the matching entry.
+      email: z.string().email('بريد إلكتروني غير صحيح').transform((s) => s.trim().toLowerCase()),
       purpose: z.enum(['register', 'reset']),
     }).parse(req.body);
 
     const db = getDatabase();
-    const existing = await db('users').where('email', email).first() as User | undefined;
+    const existing = await db('users').whereRaw('LOWER(email) = ?', [email]).first() as User | undefined;
 
     if (purpose === 'register' && existing) throw new AppError(400, 'هذا البريد الإلكتروني مسجل بالفعل');
 
@@ -190,7 +194,7 @@ export const sendOtp = async (req: Request, res: Response, next: NextFunction): 
 export const verifyOtp = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { email, otp, purpose } = z.object({
-      email: z.string().email(),
+      email: z.string().email().transform((s) => s.trim().toLowerCase()),
       otp: z.string().length(6),
       purpose: z.enum(['register', 'reset']),
     }).parse(req.body);
@@ -225,7 +229,7 @@ export const register = async (req: Request, res: Response, next: NextFunction):
     if (!email) throw new AppError(400, 'انتهت صلاحية جلسة التحقق، أعد إرسال الرمز');
 
     const db = getDatabase();
-    const exists = await db('users').where('email', email).first();
+    const exists = await db('users').whereRaw('LOWER(email) = ?', [email]).first();
     if (exists) throw new AppError(400, 'هذا البريد مسجل بالفعل');
 
     const hash = await bcrypt.hash(password, config.auth.bcryptRounds);
@@ -269,7 +273,7 @@ export const resetPassword = async (req: Request, res: Response, next: NextFunct
     if (!email) throw new AppError(400, 'انتهت صلاحية جلسة التحقق، أعد إرسال الرمز');
 
     const db = getDatabase();
-    const user = await db('users').where({ email, is_active: true }).first() as User | undefined;
+    const user = await db('users').whereRaw('LOWER(email) = ?', [email]).where('is_active', true).first() as User | undefined;
     if (!user) throw new AppError(404, 'المستخدم غير موجود');
 
     const hash = await bcrypt.hash(password, config.auth.bcryptRounds);

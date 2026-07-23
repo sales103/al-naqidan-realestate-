@@ -28,6 +28,22 @@ const MIGRATIONS: { name: string; sql: string }[] = [
       ALTER TABLE properties ADD COLUMN IF NOT EXISTS living_rooms INTEGER;
     `,
   },
+  {
+    // Durable store for short-lived auth state (OTPs, post-verification
+    // tokens, lockout counters, revoked JWTs). These used to live only in
+    // Redis, which is not provisioned in production — so every write was a
+    // silent no-op and every read came back null, which broke registration
+    // and password reset outright and quietly disabled brute-force lockout.
+    name: '004_ephemeral_kv',
+    sql: `
+      CREATE TABLE IF NOT EXISTS ephemeral_kv (
+        key        TEXT PRIMARY KEY,
+        value      JSONB NOT NULL,
+        expires_at TIMESTAMPTZ
+      );
+      CREATE INDEX IF NOT EXISTS ephemeral_kv_expires_idx ON ephemeral_kv (expires_at);
+    `,
+  },
 ];
 
 async function ensureMigrationsTable(): Promise<void> {
