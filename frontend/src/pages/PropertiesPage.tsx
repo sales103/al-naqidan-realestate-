@@ -271,7 +271,7 @@ function PropertyModal({ property, onClose }: { property?: any; onClose: () => v
                 placeholder="مثال: شقة في حي النرجس - 3 غرف" />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">النوع</label>
                 <select className="input w-full" value={form.property_type}

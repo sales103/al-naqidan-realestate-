@@ -291,7 +291,7 @@ function AISettings() {
           label="احترام ساعات العمل" desc="يتوقف AI عن الرد خارج أوقات الدوام" />
 
         {form.respect_hours && (
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="label flex items-center gap-1.5">
                 <ClockIcon className="w-3.5 h-3.5" style={{ color: '#059669' }} />
@@ -493,7 +493,7 @@ function EmailSettings() {
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="label">بريد الرد (Reply-To)</label>
               <input value={form.from} onChange={e => set('from', e.target.value)} className="input" dir="ltr" type="email" placeholder="office@company.com" />
@@ -577,7 +577,7 @@ function EmailSettings() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="label">بريد الإرسال (From)</label>
               <input value={form.from} onChange={e => set('from', e.target.value)} className="input" dir="ltr" type="email" placeholder="noreply@company.com" />

@@ -84,7 +84,7 @@ export default function Header({ onMenuClick }: Props) {
   const initials = (user?.full_name_ar ?? user?.full_name ?? 'م')[0];
 
   return (
-    <header className="sticky top-0 z-10 px-6 py-3 flex items-center gap-4" style={{
+    <header className="sticky top-0 z-10 px-3 sm:px-6 py-3 flex items-center gap-2 sm:gap-4" style={{
       background: 'rgba(242,246,255,0.85)',
       backdropFilter: 'blur(16px)',
       borderBottom: '1px solid rgba(59,91,219,0.08)',
