@@ -111,6 +111,28 @@ const MIGRATIONS: { name: string; sql: string }[] = [
       CREATE INDEX IF NOT EXISTS conversations_wa_instance_idx ON conversations (wa_instance);
     `,
   },
+  {
+    // Audit trail (سجل النشاطات): who did what and when, for sensitive actions
+    // (user management, settings changes, logins, password changes, deletes).
+    // user_id deliberately has NO foreign key and user_name is a denormalized
+    // snapshot, so the log survives the deletion of the user it refers to.
+    name: '009_audit_logs',
+    sql: `
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id     UUID,
+        user_name   VARCHAR(255),
+        action      VARCHAR(64) NOT NULL,
+        entity_type VARCHAR(32),
+        entity_id   VARCHAR(64),
+        details     JSONB,
+        ip          VARCHAR(64),
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS audit_logs_created_at_idx ON audit_logs (created_at DESC);
+      CREATE INDEX IF NOT EXISTS audit_logs_user_id_idx ON audit_logs (user_id);
+    `,
+  },
 ];
 
 async function ensureMigrationsTable(): Promise<void> {

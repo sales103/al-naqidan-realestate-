@@ -3,6 +3,7 @@ import { authenticate } from '../middleware/auth.middleware.js';
 import { getDatabase } from '../database/connection.js';
 import { whatsappService } from '../services/whatsapp.service.js';
 import { conversationService } from '../services/conversation.service.js';
+import { audit } from '../services/audit.service.js';
 
 const router = Router();
 
@@ -130,6 +131,7 @@ router.delete('/:id', async (req, res, next) => {
     // remove them first, then the conversation itself.
     await db('messages').where('conversation_id', id).del().catch(() => {});
     await db('conversations').where('id', id).del();
+    await audit({ req, action: 'conversation.delete', entityType: 'conversation', entityId: String(id), details: { wa_instance: conv.wa_instance ?? null } });
     res.json({ success: true });
   } catch (error) { next(error); }
 });

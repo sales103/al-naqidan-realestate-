@@ -3,6 +3,7 @@ import {
   HomeIcon, BuildingOfficeIcon, UsersIcon,
   ChatBubbleLeftRightIcon, ChartBarIcon,
   XMarkIcon, TableCellsIcon, UserGroupIcon, Cog6ToothIcon, DevicePhoneMobileIcon,
+  ClipboardDocumentListIcon,
 } from '@heroicons/react/24/outline';
 import { useAuthStore } from '../../store/auth.store.ts';
 import { useCompanyStore } from '../../store/company.store.ts';
@@ -41,6 +42,7 @@ export default function Sidebar({ open, onClose }: Props) {
   const user        = useAuthStore(s => s.user);
   const companyName = useCompanyStore(s => s.name_ar);
   const isManager   = ['admin','super_admin','sales_manager'].includes(user?.role ?? '');
+  const isAdmin     = ['admin','super_admin'].includes(user?.role ?? '');
   const initials    = (user?.full_name_ar ?? user?.full_name ?? 'م')[0];
 
   return (
@@ -162,6 +164,19 @@ export default function Sidebar({ open, onClose }: Props) {
                   </>
                 )}
               </NavLink>
+              {isAdmin && (
+                <NavLink to="/audit" onClick={() => onClose()}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${isActive ? 'nav-item-active' : 'nav-item-inactive'}`
+                  }>
+                  {({ isActive }) => (
+                    <>
+                      <ClipboardDocumentListIcon style={{ width: '18px', height: '18px', flexShrink: 0, color: isActive ? '#1a0f00' : '#5A6882' }} />
+                      <span>سجل النشاطات</span>
+                    </>
+                  )}
+                </NavLink>
+              )}
             </>
           )}
         </nav>

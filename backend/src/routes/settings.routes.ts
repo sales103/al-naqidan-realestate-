@@ -4,6 +4,7 @@ import { getDatabase } from '../database/connection.js';
 import { AppError } from '../middleware/error.middleware.js';
 import { z } from 'zod';
 import { clearAISettingsCache } from '../ai/agent.js';
+import { audit } from '../services/audit.service.js';
 
 const router = Router();
 router.use(authenticate);
@@ -90,6 +91,9 @@ router.put('/:key', requireAdmin, async (req: Request, res: Response, next: Next
       .merge(['value', 'description', 'updated_by', 'updated_at']);
 
     if (key === 'ai') clearAISettingsCache();
+
+    // Audit the change — only the settings key, NEVER the values (may hold secrets).
+    await audit({ req, action: 'settings.update', entityType: 'settings', entityId: key, details: { key } });
 
     res.json({ success: true, message: 'تم حفظ الإعدادات' });
   } catch (error) { next(error); }

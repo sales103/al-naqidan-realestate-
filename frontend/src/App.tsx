@@ -18,6 +18,7 @@ import GoogleSheetsPage from './pages/GoogleSheetsPage.tsx';
 import UsersPage from './pages/UsersPage.tsx';
 import SettingsPage from './pages/SettingsPage.tsx';
 import ProfilePage from './pages/ProfilePage.tsx';
+import AuditLogPage from './pages/AuditLogPage.tsx';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -70,6 +71,7 @@ export default function App() {
           <Route path="sheets"        element={<GoogleSheetsPage />} />
           <Route path="users"         element={<UsersPage />} />
           <Route path="settings"      element={<SettingsPage />} />
+          <Route path="audit"         element={<AuditLogPage />} />
           <Route path="profile"       element={<ProfilePage />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

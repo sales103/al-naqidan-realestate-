@@ -3,6 +3,7 @@ import { authenticate, authorize } from '../middleware/auth.middleware.js';
 import { getDatabase } from '../database/connection.js';
 import { cacheSet } from '../database/redis.js';
 import { sendMail } from '../services/email.service.js';
+import { audit } from '../services/audit.service.js';
 import { getCompanyName } from '../controllers/auth.controller.js';
 import { config } from '../config/index.js';
 import { logger } from '../config/logger.js';
@@ -75,6 +76,7 @@ router.post('/', authorize('super_admin', 'admin'), async (req: Request, res: Re
     }
 
     logger.info('User created with invite', { userId: user.id, email });
+    await audit({ req, action: 'user.create', entityType: 'user', entityId: user.id, details: { email: user.email, role: user.role } });
     res.status(201).json({ success: true, data: user, message: 'تم إنشاء المستخدم وإرسال رابط تعيين كلمة المرور إلى بريده' });
   } catch (error) { next(error); }
 });
@@ -102,6 +104,7 @@ router.post('/:id/resend-invite', authorize('super_admin', 'admin'), async (req:
       buildInviteEmail(companyName, user.full_name_ar ?? user.full_name, link),
     );
 
+    await audit({ req, action: 'user.invite_resend', entityType: 'user', entityId: user.id, details: { email: user.email } });
     res.json({ success: true, message: 'تم إعادة إرسال رابط الدعوة' });
   } catch (error) { next(error); }
 });
@@ -160,6 +163,17 @@ router.put('/:id', authorize('super_admin', 'admin'), async (req: Request, res: 
     const [user] = await db('users').where('id', id).update(updates)
       .returning(['id','full_name','full_name_ar','email','role','whatsapp_instance','is_active']);
     if (!user) { res.status(404).json({ success: false, error: 'المستخدم غير موجود' }); return; }
+
+    // Audit: record which fields changed — never the password value itself.
+    const changed: Record<string, any> = {};
+    for (const key of ['full_name', 'full_name_ar', 'email', 'role', 'whatsapp_instance', 'is_active'] as const) {
+      if (key in updates && updates[key] !== target[key]) {
+        changed[key] = { from: target[key] ?? null, to: updates[key] ?? null };
+      }
+    }
+    if (password) changed['password_changed'] = true;
+    await audit({ req, action: 'user.update', entityType: 'user', entityId: String(id), details: { email: user.email, ...changed } });
+
     res.json({ success: true, data: user, message: 'تم التحديث' });
   } catch (error) { next(error); }
 });
@@ -190,6 +204,7 @@ router.delete('/:id', authorize('super_admin', 'admin'), async (req: Request, re
     }
 
     await db('users').where('id', id).update({ is_active: false, updated_at: new Date() });
+    await audit({ req, action: 'user.delete', entityType: 'user', entityId: String(id), details: { email: target.email, role: target.role } });
     res.json({ success: true, message: 'تم تعطيل المستخدم' });
   } catch (error) { next(error); }
 });

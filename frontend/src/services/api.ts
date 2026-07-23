@@ -124,6 +124,11 @@ export const notificationsApi = {
   markRead:    (id: string)  => api.patch(`/notifications/${id}/read`),
   markAllRead: ()            => api.patch('/notifications/read-all'),
 };
+// --- Audit Log ---
+export const auditApi = {
+  list: (params?: { page?: number; limit?: number; action?: string; user_id?: string }) =>
+    api.get('/audit', { params }),
+};
 // --- Settings ---
 export const settingsApi = {
   getAll:     ()                        => api.get('/settings'),

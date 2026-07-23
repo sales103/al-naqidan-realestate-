@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { getDatabase } from '../database/connection.js';
 import { cacheGet, cacheSet, cacheDel } from '../database/redis.js';
 import { sendMail } from '../services/email.service.js';
+import { audit } from '../services/audit.service.js';
 import { config } from '../config/index.js';
 import { logger } from '../config/logger.js';
 import { AppError } from '../middleware/error.middleware.js';
@@ -109,6 +110,7 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
     );
     await db('users').where('id', user.id).update({ last_login_at: new Date() });
     logger.info('User logged in', { userId: user.id });
+    await audit({ req, action: 'auth.login', entityType: 'user', entityId: user.id, user: { id: user.id, name: user.email } });
 
     res.json({
       success: true,
@@ -146,6 +148,7 @@ export const changePassword = async (req: Request, res: Response, next: NextFunc
     if (!isValid) throw new AppError(400, 'كلمة المرور الحالية غير صحيحة');
     const hash = await bcrypt.hash(new_password, config.auth.bcryptRounds);
     await db('users').where('id', user.id).update({ password_hash: hash });
+    await audit({ req, action: 'auth.password_change', entityType: 'user', entityId: user.id, user: { id: user.id, name: user.email } });
     res.json({ success: true, message: 'تم تغيير كلمة المرور بنجاح' });
   } catch (error) { next(error); }
 };
@@ -294,6 +297,7 @@ export const setPassword = async (req: Request, res: Response, next: NextFunctio
     await cacheDel(`invite:${token}`);
 
     logger.info('User set password via invite', { userId: user.id, email: data.email });
+    await audit({ req, action: 'auth.account_activated', entityType: 'user', entityId: user.id, user: { id: user.id, name: user.email } });
     res.json({ success: true, message: 'تم تعيين كلمة المرور بنجاح — يمكنك الآن تسجيل الدخول' });
   } catch (error) { next(error); }
 };
@@ -318,6 +322,7 @@ export const resetPassword = async (req: Request, res: Response, next: NextFunct
     await cacheDel(`verified:reset:${verified_token}`);
 
     logger.info('Password reset via OTP', { userId: user.id });
+    await audit({ req, action: 'auth.password_reset', entityType: 'user', entityId: user.id, user: { id: user.id, name: user.email } });
     res.json({ success: true, message: 'تم تغيير كلمة المرور بنجاح' });
   } catch (error) { next(error); }
 };
@@ -366,6 +371,10 @@ export const updateProfile = async (req: Request, res: Response, next: NextFunct
       .first();
 
     logger.info('Profile updated', { userId });
+    await audit({
+      req, action: 'auth.profile_update', entityType: 'user', entityId: userId,
+      details: { fields: Object.keys(updateData).filter((k) => k !== 'updated_at') },
+    });
     res.json({ success: true, data: updated });
   } catch (error) { next(error); }
 };
