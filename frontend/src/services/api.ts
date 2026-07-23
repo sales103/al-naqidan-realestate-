@@ -13,10 +13,20 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   return config;
 });
 
+/** Endpoints where a 401 means "wrong credentials", not "session expired". */
+const AUTH_ENDPOINTS = ['/auth/login', '/auth/send-otp', '/auth/verify-otp', '/auth/register', '/auth/reset-password'];
+
 api.interceptors.response.use(
   (res) => res,
   (error: AxiosError<{ error?: string }>) => {
-    if (error.response?.status === 401) {
+    const url = error.config?.url ?? '';
+    const isAuthAttempt = AUTH_ENDPOINTS.some((e) => url.includes(e));
+    const hadSession = Boolean(useAuthStore.getState().token);
+
+    // Only a 401 on an authenticated request means the session died. Redirect
+    // then — and only if there was a session to lose, so an anonymous request
+    // can't bounce the user around either.
+    if (error.response?.status === 401 && !isAuthAttempt && hadSession) {
       useAuthStore.getState().clearAuth();
       window.location.href = '/login';
     }
