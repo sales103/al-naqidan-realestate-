@@ -2,9 +2,10 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { config } from '../config/index.js';
+import { logger } from '../config/logger.js';
 import type { AuthPayload, UserRole } from '../types/index.js';
 
-export const authenticate = (req: Request, res: Response, next: NextFunction): void => {
+export const authenticate = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     res.status(401).json({ success: false, error: 'Authentication required' });
@@ -12,12 +13,38 @@ export const authenticate = (req: Request, res: Response, next: NextFunction): v
   }
 
   const token = authHeader.slice(7);
+  let payload: AuthPayload;
   try {
-    const payload = jwt.verify(token, config.auth.jwtSecret) as AuthPayload;
-    req.user = payload;
-    next();
+    payload = jwt.verify(token, config.auth.jwtSecret) as AuthPayload;
   } catch {
     res.status(401).json({ success: false, error: 'Invalid or expired token' });
+    return;
+  }
+
+  // The token alone is not enough. It stays valid for a day, so trusting it
+  // outright meant deactivating an employee did not actually revoke their
+  // access until it expired — and because authorize() reads the role from the
+  // token, demoting someone had no effect either. One indexed lookup on the
+  // primary key settles both, and refreshes the role to the current one.
+  try {
+    const { getDatabase } = await import('../database/connection.js');
+    const user = await getDatabase()('users')
+      .where('id', payload.user_id)
+      .select('id', 'role', 'is_active')
+      .first();
+
+    if (!user || user.is_active === false) {
+      res.status(401).json({ success: false, error: 'الحساب غير مفعّل — راجع الإدارة' });
+      return;
+    }
+    req.user = { ...payload, role: user.role };
+    next();
+  } catch (err) {
+    // A database blip must not lock every user out of the system; the token
+    // was cryptographically valid, so fall back to it and log the gap.
+    logger.warn('authenticate: user re-check skipped', { error: (err as any)?.message });
+    req.user = payload;
+    next();
   }
 };
 
