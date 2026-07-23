@@ -14,7 +14,7 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 });
 
 /** Endpoints where a 401 means "wrong credentials", not "session expired". */
-const AUTH_ENDPOINTS = ['/auth/login', '/auth/send-otp', '/auth/verify-otp', '/auth/register', '/auth/reset-password'];
+const AUTH_ENDPOINTS = ['/auth/login', '/auth/send-otp', '/auth/verify-otp', '/auth/reset-password', '/auth/set-password', '/auth/verify-invite'];
 
 api.interceptors.response.use(
   (res) => res,
@@ -42,6 +42,8 @@ export const authApi = {
   updateProfile: (data: Record<string, any>) => api.put('/auth/profile', data),
   changePassword: (data: { current_password: string; new_password: string }) => api.post('/auth/change-password', data),
   logout: () => api.post('/auth/logout'),
+  verifyInvite: (token: string) => api.get('/auth/verify-invite', { params: { token } }),
+  setPassword: (token: string, password: string) => api.post('/auth/set-password', { token, password }),
 };
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────
@@ -94,13 +96,11 @@ export const clientsApi = {
 
 // ─── Users ───────────────────────────────────────────────────────────────────
 export const usersApi = {
-  list:    ()                          => api.get('/users'),
-  pending: ()                          => api.get('/users/pending'),
-  approve: (id: string, role?: string) => api.post(`/users/${id}/approve`, { role }),
-  reject:  (id: string)                => api.post(`/users/${id}/reject`),
-  create:  (data: any)                 => api.post('/users', data),
-  update:  (id: string, data: any)     => api.put(`/users/${id}`, data),
-  remove:  (id: string)                => api.delete(`/users/${id}`),
+  list:         ()                      => api.get('/users'),
+  create:       (data: any)             => api.post('/users', data),
+  update:       (id: string, data: any) => api.put(`/users/${id}`, data),
+  remove:       (id: string)            => api.delete(`/users/${id}`),
+  resendInvite: (id: string)            => api.post(`/users/${id}/resend-invite`),
 };
 
 // ─── WhatsApp ────────────────────────────────────────────────────────────────

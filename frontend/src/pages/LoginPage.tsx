@@ -144,12 +144,6 @@ export default function LoginPage() {
               ) : 'تسجيل الدخول'}
             </button>
 
-            <div className="text-center pt-1">
-              <span className="text-sm" style={{ color: '#7A8FAA' }}>موظف جديد؟ </span>
-              <Link to="/register" className="text-sm font-bold transition-colors" style={{ color: '#3B5BDB' }}>
-                إنشاء حساب
-              </Link>
-            </div>
           </form>
 
           {/* Divider */}

@@ -20,7 +20,7 @@ function generateOtp(): string {
   return crypto.randomInt(100000, 999999).toString();
 }
 
-async function getCompanyName(): Promise<string> {
+export async function getCompanyName(): Promise<string> {
   try {
     const db = getDatabase();
     const row = await db('system_settings').where('key', 'company').first();
@@ -258,6 +258,43 @@ export const register = async (req: Request, res: Response, next: NextFunction):
       pending: true,
       message: 'تم إنشاء حسابك بنجاح — في انتظار موافقة المدير',
     });
+  } catch (error) { next(error); }
+};
+
+// ─── Verify Invite Token ─────────────────────────────────────────────────────
+export const verifyInvite = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { token } = z.object({ token: z.string().min(1) }).parse(req.query);
+    const data = await cacheGet<{ email: string; full_name: string }>(`invite:${token}`);
+    if (!data) {
+      res.json({ valid: false });
+      return;
+    }
+    res.json({ valid: true, email: data.email, full_name: data.full_name });
+  } catch (error) { next(error); }
+};
+
+// ─── Set Password (invite flow) ──────────────────────────────────────────────
+export const setPassword = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { token, password } = z.object({
+      token: z.string().min(1),
+      password: z.string().min(8).regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/, 'كلمة المرور يجب أن تحتوي حروف كبيرة وصغيرة وأرقام'),
+    }).parse(req.body);
+
+    const data = await cacheGet<{ email: string; full_name: string }>(`invite:${token}`);
+    if (!data) throw new AppError(400, 'الرابط منتهي أو غير صالح');
+
+    const db = getDatabase();
+    const user = await db('users').whereRaw('LOWER(email) = ?', [data.email.toLowerCase()]).first() as User | undefined;
+    if (!user) throw new AppError(404, 'المستخدم غير موجود');
+
+    const hash = await bcrypt.hash(password, config.auth.bcryptRounds);
+    await db('users').where('id', user.id).update({ password_hash: hash, is_active: true, updated_at: new Date() });
+    await cacheDel(`invite:${token}`);
+
+    logger.info('User set password via invite', { userId: user.id, email: data.email });
+    res.json({ success: true, message: 'تم تعيين كلمة المرور بنجاح — يمكنك الآن تسجيل الدخول' });
   } catch (error) { next(error); }
 };
 

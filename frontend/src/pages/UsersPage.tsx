@@ -1,15 +1,13 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  UserPlusIcon, PencilSquareIcon, TrashIcon, CheckCircleIcon,
+  UserPlusIcon, PencilSquareIcon, TrashIcon,
   XCircleIcon, DevicePhoneMobileIcon, ShieldCheckIcon, UserIcon,
-  ClockIcon, CheckIcon, XMarkIcon, UsersIcon,
+  XMarkIcon, UsersIcon, EnvelopeIcon,
 } from '@heroicons/react/24/outline';
 import { usersApi } from '../services/api.ts';
 import { useAuthStore } from '../store/auth.store.ts';
 import toast from 'react-hot-toast';
-import { format } from 'date-fns';
-import { ar } from 'date-fns/locale';
 
 /* ── Role config ─────────────────────────────────────────────────────────── */
 const roleConfig: Record<string, { label: string; bg: string; color: string; borderColor: string; icon: typeof UserIcon }> = {
@@ -41,11 +39,9 @@ const instanceOptions = [
 ];
 
 const emptyForm = {
-  full_name: '', full_name_ar: '', email: '', password: '',
+  full_name: '', full_name_ar: '', email: '',
   role: 'sales_agent', whatsapp_instance: '', is_active: true,
 };
-
-type Tab = 'active' | 'pending';
 
 /* ── Label ───────────────────────────────────────────────────────────────── */
 function Label({ children }: { children: React.ReactNode }) {
@@ -66,23 +62,20 @@ function Inp({ ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
 export default function UsersPage() {
   const qc = useQueryClient();
   const { user: me } = useAuthStore();
-  const [tab, setTab] = useState<Tab>('active');
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [form, setForm] = useState({ ...emptyForm });
   const [confirmDelete, setConfirmDelete] = useState<any>(null);
-  const [approveRole, setApproveRole] = useState<Record<string, string>>({});
   const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }));
 
-  const { data: usersRes, isLoading } = useQuery({ queryKey: ['users'],         queryFn: () => usersApi.list() });
-  const { data: pendingRes }          = useQuery({ queryKey: ['users-pending'],  queryFn: () => usersApi.pending(), refetchInterval: 30000 });
-
-  const users: any[]   = (usersRes as any)?.data?.data  ?? [];
-  const pending: any[] = (pendingRes as any)?.data?.data ?? [];
+  const { data: usersRes, isLoading } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.list() });
+  const allUsers: any[] = (usersRes as any)?.data?.data ?? [];
+  const activeUsers = allUsers.filter((u: any) => u.is_active);
+  const pendingUsers = allUsers.filter((u: any) => !u.is_active);
 
   const createMut = useMutation({
     mutationFn: (d: any) => usersApi.create(d),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast.success('تم إنشاء المستخدم'); closeModal(); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast.success('تم إنشاء المستخدم وإرسال رابط تعيين كلمة المرور إلى بريد الموظف'); closeModal(); },
     onError: (e: any) => toast.error(e?.response?.data?.error ?? 'حدث خطأ'),
   });
   const updateMut = useMutation({
@@ -95,19 +88,9 @@ export default function UsersPage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast.success('تم تعطيل الحساب'); setConfirmDelete(null); },
     onError: (e: any) => toast.error(e?.response?.data?.error ?? 'حدث خطأ'),
   });
-  const approveMut = useMutation({
-    mutationFn: ({ id, role }: { id: string; role: string }) => usersApi.approve(id, role),
-    onSuccess: (_d, vars) => {
-      qc.invalidateQueries({ queryKey: ['users'] });
-      qc.invalidateQueries({ queryKey: ['users-pending'] });
-      toast.success('تم قبول الموظف');
-      setApproveRole(r => { const c = { ...r }; delete c[vars.id]; return c; });
-    },
-    onError: (e: any) => toast.error(e?.response?.data?.error ?? 'حدث خطأ'),
-  });
-  const rejectMut = useMutation({
-    mutationFn: (id: string) => usersApi.reject(id),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users-pending'] }); toast.success('تم رفض الطلب'); },
+  const resendMut = useMutation({
+    mutationFn: (id: string) => usersApi.resendInvite(id),
+    onSuccess: () => toast.success('تم إعادة إرسال رابط الدعوة'),
     onError: (e: any) => toast.error(e?.response?.data?.error ?? 'حدث خطأ'),
   });
 
@@ -115,7 +98,7 @@ export default function UsersPage() {
   const openEdit   = (u: any) => {
     setEditing(u);
     setForm({ full_name: u.full_name, full_name_ar: u.full_name_ar ?? '',
-      email: u.email, password: '', role: u.role,
+      email: u.email, role: u.role,
       whatsapp_instance: u.whatsapp_instance ?? '', is_active: u.is_active });
     setShowModal(true);
   };
@@ -124,9 +107,7 @@ export default function UsersPage() {
   const handleSubmit = () => {
     if (!form.full_name.trim() && !form.full_name_ar.trim()) { toast.error('أدخل اسم الموظف'); return; }
     if (!form.email.trim()) { toast.error('أدخل البريد الإلكتروني'); return; }
-    if (!editing && !form.password) { toast.error('أدخل كلمة المرور'); return; }
     const payload: any = { ...form };
-    if (!payload.password) delete payload.password;
     if (!payload.whatsapp_instance) payload.whatsapp_instance = null;
     if (!payload.full_name) payload.full_name = payload.full_name_ar;
     if (editing) updateMut.mutate({ id: editing.id, d: payload });
@@ -135,9 +116,10 @@ export default function UsersPage() {
 
   const isBusy     = createMut.isPending || updateMut.isPending;
   const canManage  = me?.role === 'super_admin' || me?.role === 'admin';
+  const isSuperAdmin = me?.role === 'super_admin';
 
   /* role stats */
-  const roleCounts = users.reduce<Record<string, number>>((acc, u) => {
+  const roleCounts = activeUsers.reduce<Record<string, number>>((acc, u) => {
     acc[u.role] = (acc[u.role] ?? 0) + 1; return acc;
   }, {});
 
@@ -165,8 +147,8 @@ export default function UsersPage() {
       {/* ── Stats Strip ───────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: 'إجمالي الموظفين', value: users.length,          color: '#3B5BDB', bg: 'rgba(59,91,219,0.07)'  },
-          { label: 'طلبات معلقة',     value: pending.length,        color: '#F59E0B', bg: 'rgba(245,158,11,0.08)' },
+          { label: 'إجمالي الموظفين', value: activeUsers.length,     color: '#3B5BDB', bg: 'rgba(59,91,219,0.07)'  },
+          { label: 'بانتظار التفعيل',  value: pendingUsers.length,    color: '#F59E0B', bg: 'rgba(245,158,11,0.08)' },
           { label: 'مديرون',          value: (roleCounts['admin'] ?? 0) + (roleCounts['sales_manager'] ?? 0), color: '#7C3AED', bg: 'rgba(124,58,237,0.07)' },
           { label: 'موظفو مبيعات',    value: roleCounts['sales_agent'] ?? 0, color: '#059669', bg: 'rgba(5,150,105,0.07)' },
         ].map(s => (
@@ -182,204 +164,131 @@ export default function UsersPage() {
         ))}
       </div>
 
-      {/* ── Tabs ─────────────────────────────────────────────────────────── */}
-      <div className="flex gap-2">
-        {[
-          { id: 'active',  label: 'الموظفون النشطون', count: users.length,   countColor: '#3B5BDB', countBg: 'rgba(59,91,219,0.1)' },
-          { id: 'pending', label: 'طلبات الانضمام',   count: pending.length, countColor: '#D97706', countBg: 'rgba(245,158,11,0.1)' },
-        ].map(t => {
-          const isActive = tab === t.id;
-          return (
-            <button key={t.id} onClick={() => setTab(t.id as Tab)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all duration-200"
-              style={{
-                background: isActive ? '#fff' : 'transparent',
-                color: isActive ? '#0F1C35' : '#7A8FAA',
-                border: `1px solid ${isActive ? 'rgba(59,91,219,0.12)' : 'transparent'}`,
-                boxShadow: isActive ? '0 1px 4px rgba(6,12,24,0.07)' : 'none',
-              }}>
-              {t.label}
-              {t.count > 0 && (
-                <span className="text-xs font-bold px-1.5 py-0.5 rounded-full"
-                  style={{ background: t.countBg, color: t.countColor }}>
-                  {t.count}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* ── Active Users ──────────────────────────────────────────────────── */}
-      {tab === 'active' && (
-        isLoading ? (
-          <div className="space-y-3 animate-pulse">
-            {[...Array(4)].map((_, i) => (
-              <div key={i} className="rounded-2xl h-16" style={{ background: 'rgba(59,91,219,0.04)', border: '1px solid rgba(59,91,219,0.06)' }} />
-            ))}
+      {/* ── Users Table ──────────────────────────────────────────────────── */}
+      {isLoading ? (
+        <div className="space-y-3 animate-pulse">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="rounded-2xl h-16" style={{ background: 'rgba(59,91,219,0.04)', border: '1px solid rgba(59,91,219,0.06)' }} />
+          ))}
+        </div>
+      ) : allUsers.length === 0 ? (
+        <div className="rounded-2xl py-20 text-center" style={{ background: '#fff', border: '1px solid rgba(59,91,219,0.08)' }}>
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ background: 'rgba(59,91,219,0.06)' }}>
+            <UserIcon className="w-8 h-8" style={{ color: '#C4CEDE' }} />
           </div>
-        ) : users.length === 0 ? (
-          <div className="rounded-2xl py-20 text-center" style={{ background: '#fff', border: '1px solid rgba(59,91,219,0.08)' }}>
-            <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ background: 'rgba(59,91,219,0.06)' }}>
-              <UserIcon className="w-8 h-8" style={{ color: '#C4CEDE' }} />
-            </div>
-            <p className="font-bold" style={{ color: '#0F1C35' }}>لا يوجد موظفون بعد</p>
-            <p className="text-sm mt-1" style={{ color: '#7A8FAA' }}>ابدأ بإضافة أول موظف في فريقك</p>
-          </div>
-        ) : (
-          <div className="rounded-2xl overflow-hidden" style={{ background: '#fff', border: '1px solid rgba(59,91,219,0.08)', boxShadow: '0 1px 4px rgba(6,12,24,0.05)' }}>
-            <div className="overflow-x-auto">
-            <table className="w-full text-sm" style={{ minWidth: '640px' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid rgba(59,91,219,0.06)', background: 'rgba(242,246,255,0.6)' }}>
-                  {['الموظف', 'البريد الإلكتروني', 'الدور', 'واتساب', ''].map((h, i) => (
-                    <th key={i} className="px-5 py-3.5 text-right text-xs font-bold tracking-wide" style={{ color: '#7A8FAA' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((u, idx) => {
-                  const role     = roleConfig[u.role] ?? roleConfig['sales_agent']!;
-                  const RoleIcon = role.icon;
-                  const name     = u.full_name_ar || u.full_name || '?';
-                  const instance = instanceOptions.find(o => o.value === u.whatsapp_instance);
-                  const isLast   = idx === users.length - 1;
-                  return (
-                    <tr key={u.id} style={{ borderBottom: isLast ? 'none' : '1px solid rgba(59,91,219,0.05)' }}
-                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(59,91,219,0.025)')}
-                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0"
-                            style={{ background: avatarGradient(name) }}>
-                            {name[0]}
-                          </div>
-                          <div>
-                            <p className="font-semibold" style={{ color: '#0F1C35' }}>{name}</p>
-                            {u.full_name_ar && u.full_name && u.full_name !== u.full_name_ar && (
-                              <p className="text-xs" style={{ color: '#94A3B8' }}>{u.full_name}</p>
-                            )}
-                          </div>
+          <p className="font-bold" style={{ color: '#0F1C35' }}>لا يوجد موظفون بعد</p>
+          <p className="text-sm mt-1" style={{ color: '#7A8FAA' }}>ابدأ بإضافة أول موظف في فريقك</p>
+        </div>
+      ) : (
+        <div className="rounded-2xl overflow-hidden" style={{ background: '#fff', border: '1px solid rgba(59,91,219,0.08)', boxShadow: '0 1px 4px rgba(6,12,24,0.05)' }}>
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm" style={{ minWidth: '640px' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid rgba(59,91,219,0.06)', background: 'rgba(242,246,255,0.6)' }}>
+                {['الموظف', 'البريد الإلكتروني', 'الدور', 'الحالة', 'واتساب', ''].map((h, i) => (
+                  <th key={i} className="px-5 py-3.5 text-right text-xs font-bold tracking-wide" style={{ color: '#7A8FAA' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {allUsers.map((u, idx) => {
+                const role     = roleConfig[u.role] ?? roleConfig['sales_agent']!;
+                const RoleIcon = role.icon;
+                const name     = u.full_name_ar || u.full_name || '?';
+                const instance = instanceOptions.find(o => o.value === u.whatsapp_instance);
+                const isLast   = idx === allUsers.length - 1;
+                const isPending = !u.is_active;
+                return (
+                  <tr key={u.id} style={{ borderBottom: isLast ? 'none' : '1px solid rgba(59,91,219,0.05)' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(59,91,219,0.025)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0"
+                          style={{ background: isPending ? 'linear-gradient(135deg, #94A3B8, #CBD5E1)' : avatarGradient(name) }}>
+                          {name[0]}
                         </div>
-                      </td>
-                      <td className="px-5 py-4" style={{ color: '#5A6882' }}>{u.email}</td>
-                      <td className="px-5 py-4">
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
-                          style={{ background: role.bg, color: role.color, border: `1px solid ${role.borderColor}` }}>
-                          <RoleIcon className="w-3.5 h-3.5" />
-                          {role.label}
+                        <div>
+                          <p className="font-semibold" style={{ color: '#0F1C35' }}>{name}</p>
+                          {u.full_name_ar && u.full_name && u.full_name !== u.full_name_ar && (
+                            <p className="text-xs" style={{ color: '#94A3B8' }}>{u.full_name}</p>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-5 py-4" style={{ color: '#5A6882' }}>{u.email}</td>
+                    <td className="px-5 py-4">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
+                        style={{ background: role.bg, color: role.color, border: `1px solid ${role.borderColor}` }}>
+                        <RoleIcon className="w-3.5 h-3.5" />
+                        {role.label}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4">
+                      {isPending ? (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full"
+                          style={{ background: 'rgba(245,158,11,0.08)', color: '#D97706', border: '1px solid rgba(245,158,11,0.15)' }}>
+                          بانتظار التفعيل
                         </span>
-                      </td>
-                      <td className="px-5 py-4">
-                        {u.whatsapp_instance ? (
-                          <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full"
-                            style={{ background: 'rgba(5,150,105,0.08)', color: '#059669', border: '1px solid rgba(5,150,105,0.15)' }}>
-                            <DevicePhoneMobileIcon className="w-3.5 h-3.5" />
-                            {instance?.label ?? u.whatsapp_instance}
-                          </span>
-                        ) : (
-                          <span className="text-xs" style={{ color: '#C4CEDE' }}>غير مُخصص</span>
-                        )}
-                      </td>
-                      <td className="px-5 py-4">
-                        {canManage && (
-                          <div className="flex items-center gap-1.5 justify-end">
-                            <button onClick={() => openEdit(u)}
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full"
+                          style={{ background: 'rgba(5,150,105,0.08)', color: '#059669', border: '1px solid rgba(5,150,105,0.15)' }}>
+                          نشط
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-5 py-4">
+                      {u.whatsapp_instance ? (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full"
+                          style={{ background: 'rgba(5,150,105,0.08)', color: '#059669', border: '1px solid rgba(5,150,105,0.15)' }}>
+                          <DevicePhoneMobileIcon className="w-3.5 h-3.5" />
+                          {instance?.label ?? u.whatsapp_instance}
+                        </span>
+                      ) : (
+                        <span className="text-xs" style={{ color: '#C4CEDE' }}>غير مُخصص</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-4">
+                      {canManage && (
+                        <div className="flex items-center gap-1.5 justify-end">
+                          {isPending && (
+                            <button onClick={() => resendMut.mutate(u.id)}
+                              disabled={resendMut.isPending}
                               className="p-2 rounded-lg transition-all"
-                              title="تعديل"
+                              title="إعادة إرسال الدعوة"
                               style={{ color: '#7A8FAA' }}
-                              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(59,91,219,0.08)'; (e.currentTarget as HTMLButtonElement).style.color = '#3B5BDB'; }}
+                              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(245,158,11,0.08)'; (e.currentTarget as HTMLButtonElement).style.color = '#D97706'; }}
                               onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = '#7A8FAA'; }}>
-                              <PencilSquareIcon className="w-4 h-4" />
+                              <EnvelopeIcon className="w-4 h-4" />
                             </button>
-                            {u.id !== me?.id && (
-                              <button onClick={() => setConfirmDelete(u)}
-                                className="p-2 rounded-lg transition-all"
-                                title="تعطيل"
-                                style={{ color: '#7A8FAA' }}
-                                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.07)'; (e.currentTarget as HTMLButtonElement).style.color = '#DC2626'; }}
-                                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = '#7A8FAA'; }}>
-                                <TrashIcon className="w-4 h-4" />
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            </div>
+                          )}
+                          <button onClick={() => openEdit(u)}
+                            className="p-2 rounded-lg transition-all"
+                            title="تعديل"
+                            style={{ color: '#7A8FAA' }}
+                            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(59,91,219,0.08)'; (e.currentTarget as HTMLButtonElement).style.color = '#3B5BDB'; }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = '#7A8FAA'; }}>
+                            <PencilSquareIcon className="w-4 h-4" />
+                          </button>
+                          {u.id !== me?.id && (
+                            <button onClick={() => setConfirmDelete(u)}
+                              className="p-2 rounded-lg transition-all"
+                              title="تعطيل"
+                              style={{ color: '#7A8FAA' }}
+                              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.07)'; (e.currentTarget as HTMLButtonElement).style.color = '#DC2626'; }}
+                              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = '#7A8FAA'; }}>
+                              <TrashIcon className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
           </div>
-        )
-      )}
-
-      {/* ── Pending Tab ───────────────────────────────────────────────────── */}
-      {tab === 'pending' && (
-        <div className="space-y-3">
-          {pending.length === 0 ? (
-            <div className="rounded-2xl py-20 text-center" style={{ background: '#fff', border: '1px solid rgba(59,91,219,0.08)' }}>
-              <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ background: 'rgba(5,150,105,0.07)' }}>
-                <CheckCircleIcon className="w-8 h-8" style={{ color: '#34D399' }} />
-              </div>
-              <p className="font-bold" style={{ color: '#0F1C35' }}>لا توجد طلبات معلقة</p>
-              <p className="text-sm mt-1" style={{ color: '#7A8FAA' }}>جميع طلبات الانضمام تمت مراجعتها</p>
-            </div>
-          ) : pending.map((u: any) => {
-            const name = u.full_name_ar || u.full_name || '?';
-            return (
-              <div key={u.id} className="rounded-2xl p-5 flex items-center gap-4 flex-wrap transition-all"
-                style={{ background: '#fff', border: '1px solid rgba(245,158,11,0.18)', boxShadow: '0 1px 4px rgba(245,158,11,0.06)' }}>
-
-                {/* Avatar */}
-                <div className="w-11 h-11 rounded-full flex items-center justify-center text-white font-bold text-lg flex-shrink-0"
-                  style={{ background: 'linear-gradient(135deg, #F59E0B, #FBBF24)' }}>
-                  {name[0]}
-                </div>
-
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <p className="font-bold" style={{ color: '#0F1C35' }}>{name}</p>
-                  <p className="text-sm" style={{ color: '#5A6882' }}>{u.email}</p>
-                  <p className="text-xs mt-1 flex items-center gap-1" style={{ color: '#94A3B8' }}>
-                    <ClockIcon className="w-3.5 h-3.5" />
-                    طلب في {format(new Date(u.created_at), 'dd MMM yyyy — HH:mm', { locale: ar })}
-                  </p>
-                </div>
-
-                {/* Actions */}
-                {canManage && (
-                  <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
-                    <select value={approveRole[u.id] ?? 'sales_agent'}
-                      onChange={e => setApproveRole(r => ({ ...r, [u.id]: e.target.value }))}
-                      className="input text-xs py-1.5 px-2.5" style={{ width: 'auto' }}>
-                      <option value="sales_agent">موظف مبيعات</option>
-                      <option value="sales_manager">مدير مبيعات</option>
-                      <option value="customer_service">خدمة عملاء</option>
-                      <option value="marketer">مسوّق</option>
-                      <option value="admin">مدير النظام</option>
-                      <option value="viewer">مشاهد فقط</option>
-                    </select>
-
-                    <button onClick={() => approveMut.mutate({ id: u.id, role: approveRole[u.id] ?? 'sales_agent' })}
-                      disabled={approveMut.isPending}
-                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-white transition-all disabled:opacity-60"
-                      style={{ background: 'linear-gradient(135deg, #059669, #34D399)', boxShadow: '0 2px 8px rgba(5,150,105,0.3)' }}>
-                      <CheckIcon className="w-3.5 h-3.5" /> قبول
-                    </button>
-
-                    <button onClick={() => rejectMut.mutate(u.id)}
-                      disabled={rejectMut.isPending}
-                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all disabled:opacity-60"
-                      style={{ background: 'rgba(239,68,68,0.07)', color: '#DC2626', border: '1px solid rgba(239,68,68,0.15)' }}>
-                      <XMarkIcon className="w-3.5 h-3.5" /> رفض
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
         </div>
       )}
 
@@ -423,6 +332,14 @@ export default function UsersPage() {
                 </div>
               )}
 
+              {!editing && (
+                <div className="p-3 rounded-xl" style={{ background: 'rgba(59,91,219,0.04)', border: '1px solid rgba(59,91,219,0.08)' }}>
+                  <p className="text-xs" style={{ color: '#5A6882' }}>
+                    سيتم إرسال رابط تعيين كلمة المرور تلقائيا إلى بريد الموظف
+                  </p>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <Field label="الاسم بالعربي">
                   <Inp value={form.full_name_ar} onChange={e => set('full_name_ar', e.target.value)} placeholder="محمد العلي" />
@@ -436,18 +353,15 @@ export default function UsersPage() {
                 <Inp type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="user@example.com" dir="ltr" />
               </Field>
 
-              <Field label={editing ? 'كلمة المرور الجديدة (اتركها فارغة للإبقاء)' : 'كلمة المرور'}>
-                <Inp type="password" value={form.password} onChange={e => set('password', e.target.value)} placeholder={editing ? '••••••••' : 'كلمة المرور (8 أحرف على الأقل)'} dir="ltr" />
-              </Field>
-
               <div className="grid grid-cols-2 gap-3">
                 <Field label="الدور الوظيفي">
                   <select value={form.role} onChange={e => set('role', e.target.value)} className="input w-full">
-                    <option value="sales_agent">موظف مبيعات</option>
+                    {isSuperAdmin && <option value="super_admin">سوبر ادمن</option>}
+                    <option value="admin">مدير النظام</option>
                     <option value="sales_manager">مدير مبيعات</option>
+                    <option value="sales_agent">موظف مبيعات</option>
                     <option value="customer_service">خدمة عملاء</option>
                     <option value="marketer">مسوّق</option>
-                    <option value="admin">مدير النظام</option>
                     <option value="viewer">مشاهد فقط</option>
                   </select>
                 </Field>
@@ -486,7 +400,7 @@ export default function UsersPage() {
                 className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-60"
                 style={{ background: 'linear-gradient(135deg, #3B5BDB, #5273F5)', boxShadow: '0 2px 10px rgba(59,91,219,0.35)' }}>
                 {isBusy && <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>}
-                {editing ? 'حفظ التعديلات' : 'إنشاء الحساب'}
+                {editing ? 'حفظ التعديلات' : 'إنشاء وإرسال الدعوة'}
               </button>
             </div>
           </div>

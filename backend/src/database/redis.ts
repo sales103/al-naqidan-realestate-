@@ -62,7 +62,7 @@ export const closeRedis = async (): Promise<void> => {
 // Redis is not provisioned in production here, so those keys silently vanished
 // — registration and password reset could never succeed, and brute-force
 // lockout never engaged. Persist exactly those prefixes in Postgres instead.
-const DURABLE_PREFIXES = ['otp:', 'verified:', 'login_fail:', 'lockout:', 'otp_fail:', 'blacklist:'];
+const DURABLE_PREFIXES = ['otp:', 'verified:', 'login_fail:', 'lockout:', 'otp_fail:', 'blacklist:', 'invite:'];
 const isDurable = (key: string): boolean => DURABLE_PREFIXES.some((p) => key.startsWith(p));
 
 async function dbGet<T>(key: string): Promise<T | null> {

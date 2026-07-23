@@ -5,8 +5,8 @@ import { useCompanyStore } from './store/company.store.ts';
 import { api, settingsApi } from './services/api.ts';
 import Layout from './components/Layout/Layout.tsx';
 import LoginPage from './pages/LoginPage.tsx';
-import RegisterPage from './pages/RegisterPage.tsx';
 import ForgotPasswordPage from './pages/ForgotPasswordPage.tsx';
+import SetPasswordPage from './pages/SetPasswordPage.tsx';
 import SetupPage from './pages/SetupPage.tsx';
 import DashboardPage from './pages/DashboardPage.tsx';
 import PropertiesPage from './pages/PropertiesPage.tsx';
@@ -57,7 +57,7 @@ export default function App() {
       <Routes>
         <Route path="/setup"           element={<SetupPage />} />
         <Route path="/login"           element={<LoginPage />} />
-        <Route path="/register"        element={<RegisterPage />} />
+        <Route path="/set-password"    element={<SetPasswordPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
           <Route index element={<Navigate to="/dashboard" replace />} />

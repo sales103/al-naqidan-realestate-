@@ -93,7 +93,8 @@ export const config = {
     apiKey: optionalEnv('IMGBB_API_KEY', ''),
   },
 
-  frontendUrl: optionalEnv('FRONTEND_URL', 'http://localhost:5173'),
+  frontendUrl: optionalEnv('FRONTEND_URL',
+    process.env['NODE_ENV'] === 'production' ? 'https://al-naqidan-realestate.vercel.app' : 'http://localhost:5173'),
 
   smtp: {
     host: optionalEnv('SMTP_HOST', 'smtp.gmail.com'),
