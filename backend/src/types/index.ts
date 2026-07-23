@@ -207,6 +207,9 @@ export interface Message {
   ai_cost_usd?: number;
   sent_by?: string;
   is_from_ai: boolean;
+  /** Recorded for the dashboard, but never replayed to the model
+   *  (tappable menus, internal markers). */
+  exclude_from_ai?: boolean;
   quoted_message_id?: string;
   error_message?: string;
   created_at: Date;

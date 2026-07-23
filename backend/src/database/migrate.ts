@@ -44,6 +44,45 @@ const MIGRATIONS: { name: string; sql: string }[] = [
       CREATE INDEX IF NOT EXISTS ephemeral_kv_expires_idx ON ephemeral_kv (expires_at);
     `,
   },
+  {
+    // Without these, two webhooks racing for the same new customer each insert
+    // a row and the chat silently splits into two threads. The code now
+    // re-reads on a 23505, but that only helps if the constraint exists.
+    //
+    // Creating a unique index outright would abort the whole migration — and
+    // with it the boot — if the live data already contains duplicates. So try
+    // it, and on failure log and carry on rather than take the service down;
+    // the duplicates can then be reconciled deliberately.
+    name: '005_unique_whatsapp_identities',
+    sql: `
+      DO $$
+      BEGIN
+        BEGIN
+          CREATE UNIQUE INDEX IF NOT EXISTS clients_whatsapp_id_uniq
+            ON clients (whatsapp_id) WHERE whatsapp_id IS NOT NULL;
+        EXCEPTION WHEN unique_violation OR duplicate_table THEN
+          RAISE NOTICE 'clients.whatsapp_id has duplicates — unique index skipped';
+        END;
+
+        BEGIN
+          CREATE UNIQUE INDEX IF NOT EXISTS conversations_whatsapp_chat_id_uniq
+            ON conversations (whatsapp_chat_id) WHERE whatsapp_chat_id IS NOT NULL;
+        EXCEPTION WHEN unique_violation OR duplicate_table THEN
+          RAISE NOTICE 'conversations.whatsapp_chat_id has duplicates — unique index skipped';
+        END;
+      END $$;
+    `,
+  },
+  {
+    // Menus and internal markers are recorded so staff can see the full thread,
+    // but they are not things the bot "said" — replaying them to the model as
+    // assistant turns makes it imitate menus and emit bracketed placeholders,
+    // and they crowd real conversation out of the history window.
+    name: '006_messages_exclude_from_ai',
+    sql: `
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS exclude_from_ai BOOLEAN NOT NULL DEFAULT FALSE;
+    `,
+  },
 ];
 
 async function ensureMigrationsTable(): Promise<void> {

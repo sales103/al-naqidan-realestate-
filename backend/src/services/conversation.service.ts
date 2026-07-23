@@ -472,7 +472,7 @@ export class ConversationService {
     this.saveMessage({
       conversation_id: conversation.id,
       direction: 'outbound', message_type: 'text', status: 'sent',
-      content: menuText, is_from_ai: true,
+      content: menuText, is_from_ai: true, exclude_from_ai: true,
     }).catch((e: any) => logger.warn('menu save failed', { error: e?.message }));
     await this.saveFlowContext(conversation.id, { ...ctx, ...extra, state: nextState, pending: options });
   }
@@ -926,7 +926,7 @@ export class ConversationService {
       // agent.ts keeps the last 20 of whatever it's handed — fetching only 10
       // here made that cap moot and meant the AI could never see further back
       // than 5 exchanges, "forgetting" things a customer said a bit earlier.
-      const history = await this.getConversationHistory(conversation.id, 24);
+      const history = await this.getConversationHistory(conversation.id, 24, true);
 
       // Pre-search using flow context. The office operates in Buraydah only, so
       // there is no city/district to filter by — every listing already is one.
@@ -1118,7 +1118,7 @@ export class ConversationService {
           conversation_id: conversation.id,
           direction: 'outbound', message_type: 'text', status: 'sent',
           content: `[تم إرسال ${properties.length} عقار] ${this.buildSearchSummary(ctx, {})}`,
-          is_from_ai: true,
+          is_from_ai: true, exclude_from_ai: true,
         }).catch(() => {});
         await this.saveFlowContext(conversation.id, {
           ...ctx,
@@ -1149,9 +1149,20 @@ export class ConversationService {
   private async findOrCreateConversation(clientId: string, chatId: string): Promise<Conversation> {
     const existing = await this.db('conversations').where('whatsapp_chat_id', chatId).first() as Conversation | undefined;
     if (existing) return existing;
-    const [conv] = await this.db('conversations')
-      .insert({ client_id: clientId, whatsapp_chat_id: chatId, is_active: true, is_ai_enabled: true, unread_count: 0 })
-      .returning('*') as Conversation[];
+    // Same concurrent-webhook race as findOrCreateByWhatsapp: re-read rather
+    // than fail, so a burst of messages can't split one chat into two threads.
+    let conv: Conversation | undefined;
+    try {
+      [conv] = await this.db('conversations')
+        .insert({ client_id: clientId, whatsapp_chat_id: chatId, is_active: true, is_ai_enabled: true, unread_count: 0 })
+        .returning('*') as Conversation[];
+    } catch (e: any) {
+      if (e?.code === '23505') {
+        const raced = await this.db('conversations').where('whatsapp_chat_id', chatId).first() as Conversation | undefined;
+        if (raced) return raced;
+      }
+      throw e;
+    }
     if (!conv) throw new Error('Failed to create conversation');
     return conv;
   }
@@ -1167,10 +1178,17 @@ export class ConversationService {
     return msg;
   }
 
-  async getConversationHistory(conversationId: string, limit = 10): Promise<Message[]> {
-    return this.db('messages')
-      .where('conversation_id', conversationId)
-      .orderBy('created_at', 'desc').limit(limit)
+  /**
+   * Recent messages, newest last.
+   *
+   * `forAI` drops rows that are recorded for the dashboard but were never
+   * something the bot actually said — tappable menus and internal markers.
+   * Replaying those as assistant turns teaches the model to imitate them.
+   */
+  async getConversationHistory(conversationId: string, limit = 10, forAI = false): Promise<Message[]> {
+    const q = this.db('messages').where('conversation_id', conversationId);
+    if (forAI) q.where((b) => b.whereNull('exclude_from_ai').orWhere('exclude_from_ai', false));
+    return q.orderBy('created_at', 'desc').limit(limit)
       .then((msgs: Message[]) => msgs.reverse());
   }
 

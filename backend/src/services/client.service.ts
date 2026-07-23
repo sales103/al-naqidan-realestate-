@@ -42,19 +42,32 @@ export class ClientService {
     let client = await this.findByWhatsappId(whatsappId);
     if (client) return { client, isNew: false };
 
-    const [newClient] = await this.db('clients')
-      .insert({
-        full_name: name ?? phone,
-        phone,
-        whatsapp_id: whatsappId,
-        status: 'new',
-        source: 'whatsapp',
-        first_contact_at: new Date(),
-        ai_profile: {},
-        conversation_context: {},
-        intent_history: [],
-      })
-      .returning('*') as Client[];
+    // A customer typically fires two messages in a row, and the webhook handler
+    // acknowledges before processing — so both land here concurrently, both see
+    // no client, and both insert. Let the loser of the race adopt the winner's
+    // row instead of failing the message outright.
+    let newClient: Client | undefined;
+    try {
+      [newClient] = await this.db('clients')
+        .insert({
+          full_name: name ?? phone,
+          phone,
+          whatsapp_id: whatsappId,
+          status: 'new',
+          source: 'whatsapp',
+          first_contact_at: new Date(),
+          ai_profile: {},
+          conversation_context: {},
+          intent_history: [],
+        })
+        .returning('*') as Client[];
+    } catch (e: any) {
+      if (e?.code === '23505') {
+        const raced = await this.findByWhatsappId(whatsappId);
+        if (raced) return { client: raced, isNew: false };
+      }
+      throw e;
+    }
 
     if (!newClient) throw new Error('Failed to create client');
     logger.info('New client created', { phone, whatsappId });
