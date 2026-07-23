@@ -39,6 +39,8 @@ export const authApi = {
   login: (email: string, password: string, cf_turnstile_token?: string) =>
     api.post<{ success: boolean; data: { token: string; user: any } }>('/auth/login', { email, password, cf_turnstile_token }),
   me: () => api.get('/auth/me'),
+  updateProfile: (data: Record<string, any>) => api.put('/auth/profile', data),
+  changePassword: (data: { current_password: string; new_password: string }) => api.post('/auth/change-password', data),
   logout: () => api.post('/auth/logout'),
 };
 

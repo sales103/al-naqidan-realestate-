@@ -285,6 +285,54 @@ export const resetPassword = async (req: Request, res: Response, next: NextFunct
   } catch (error) { next(error); }
 };
 
+// ─── Update Profile ──────────────────────────────────────────────────────────
+export const updateProfile = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const body = z.object({
+      full_name: z.string().min(2).optional(),
+      full_name_ar: z.string().min(2).optional(),
+      email: z.string().email().transform((s) => s.trim().toLowerCase()).optional(),
+      phone: z.string().optional(),
+      avatar_url: z.string().url().optional().nullable(),
+    }).parse(req.body);
+
+    const db = getDatabase();
+    const userId = req.user!.user_id;
+
+    // Validate email uniqueness if changed
+    if (body.email) {
+      const existing = await db('users')
+        .whereRaw('LOWER(email) = ?', [body.email])
+        .whereNot('id', userId)
+        .first();
+      if (existing) throw new AppError(400, 'هذا البريد الإلكتروني مستخدم بالفعل');
+    }
+
+    const updateData: Record<string, any> = {};
+    if (body.full_name !== undefined) updateData.full_name = body.full_name;
+    if (body.full_name_ar !== undefined) updateData.full_name_ar = body.full_name_ar;
+    if (body.email !== undefined) updateData.email = body.email;
+    if (body.phone !== undefined) updateData.phone = body.phone;
+    if (body.avatar_url !== undefined) updateData.avatar_url = body.avatar_url;
+
+    if (Object.keys(updateData).length === 0) {
+      throw new AppError(400, 'لم يتم تقديم أي بيانات للتحديث');
+    }
+
+    updateData.updated_at = new Date();
+
+    await db('users').where('id', userId).update(updateData);
+
+    const updated = await db('users')
+      .where('id', userId)
+      .select('id', 'email', 'phone', 'full_name', 'full_name_ar', 'role', 'avatar_url', 'whatsapp_instance')
+      .first();
+
+    logger.info('Profile updated', { userId });
+    res.json({ success: true, data: updated });
+  } catch (error) { next(error); }
+};
+
 // ─── Forgot Password (legacy stub) ───────────────────────────────────────────
 export const forgotPassword = async (_req: Request, res: Response): Promise<void> => {
   res.status(410).json({ success: false, error: 'استخدم /api/auth/send-otp' });

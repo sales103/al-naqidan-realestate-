@@ -1,5 +1,5 @@
 ﻿import { Router } from 'express';
-import { login, me, changePassword, logout, sendOtp, verifyOtp, register, resetPassword } from '../controllers/auth.controller.js';
+import { login, me, changePassword, logout, sendOtp, verifyOtp, register, resetPassword, updateProfile } from '../controllers/auth.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { loginRateLimit, otpSendRateLimit, otpVerifyRateLimit, authActionRateLimit } from '../middleware/security.middleware.js';
 import { verifyTurnstile } from '../middleware/turnstile.middleware.js';
@@ -13,6 +13,7 @@ router.post('/register',        authActionRateLimit, register);
 router.post('/reset-password',  authActionRateLimit, resetPassword);
 router.get( '/me',              authenticate, me);
 router.post('/change-password', authenticate, changePassword);
+router.put( '/profile',        authenticate, updateProfile);
 router.post('/logout',          authenticate, logout);
 
 export default router;

@@ -204,7 +204,10 @@ export default function Header({ onMenuClick }: Props) {
         <div style={{ width: '1px', height: '24px', background: 'rgba(59,91,219,0.1)' }} />
 
         {/* User */}
-        <div className="flex items-center gap-2.5">
+        <button onClick={() => navigate('/profile')} className="flex items-center gap-2.5 rounded-xl px-2 py-1.5 transition-all"
+          style={{ cursor: 'pointer' }}
+          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(59,91,219,0.07)'; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}>
           <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold" style={{
             background: 'linear-gradient(135deg, #A8892E, #C8A84B)',
             color: '#1a0f00',
@@ -215,7 +218,7 @@ export default function Header({ onMenuClick }: Props) {
           <span className="hidden sm:block text-sm font-semibold max-w-[120px] truncate" style={{ color: '#1A2E50' }}>
             {user?.full_name_ar ?? user?.full_name}
           </span>
-        </div>
+        </button>
 
         <button onClick={handleLogout}
           className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-2 rounded-xl transition-all"

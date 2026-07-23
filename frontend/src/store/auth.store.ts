@@ -16,6 +16,7 @@ interface AuthState {
   user: AuthUser | null;
   isAuthenticated: boolean;
   setAuth: (token: string, user: AuthUser) => void;
+  updateUser: (data: Partial<AuthUser>) => void;
   clearAuth: () => void;
 }
 
@@ -26,6 +27,7 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       isAuthenticated: false,
       setAuth: (token, user) => set({ token, user, isAuthenticated: true }),
+      updateUser: (data) => set((s) => ({ user: s.user ? { ...s.user, ...data } : s.user })),
       clearAuth: () => set({ token: null, user: null, isAuthenticated: false }),
     }),
     { name: 'naqidan-auth', partialize: (s) => ({ token: s.token, user: s.user, isAuthenticated: s.isAuthenticated }) }

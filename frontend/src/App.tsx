@@ -17,6 +17,7 @@ import WhatsAppPage from './pages/WhatsAppPage.tsx';
 import GoogleSheetsPage from './pages/GoogleSheetsPage.tsx';
 import UsersPage from './pages/UsersPage.tsx';
 import SettingsPage from './pages/SettingsPage.tsx';
+import ProfilePage from './pages/ProfilePage.tsx';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -69,6 +70,7 @@ export default function App() {
           <Route path="sheets"        element={<GoogleSheetsPage />} />
           <Route path="users"         element={<UsersPage />} />
           <Route path="settings"      element={<SettingsPage />} />
+          <Route path="profile"       element={<ProfilePage />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
