@@ -23,7 +23,11 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
 router.patch('/:id/read', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const db = getDatabase();
-    await db('notifications').where('id', req.params['id']).update({ read_at: new Date() });
+    const userId = (req as any).user?.user_id;
+    const updated = await db('notifications')
+      .where({ id: req.params['id'], user_id: userId })
+      .update({ read_at: new Date() });
+    if (!updated) { res.status(404).json({ success: false, error: 'الإشعار غير موجود' }); return; }
     res.json({ success: true });
   } catch (error) { next(error); }
 });

@@ -79,10 +79,54 @@ router.put('/:id', authorize('super_admin', 'admin'), async (req: Request, res: 
     const { id } = req.params;
     const { full_name, full_name_ar, email, role, whatsapp_instance, is_active, password } = req.body as any;
     const db = getDatabase();
+    const actor = (req as any).user;
+
+    const target = await db('users').where('id', id).first();
+    if (!target) { res.status(404).json({ success: false, error: 'المستخدم غير موجود' }); return; }
+
+    // An admin could otherwise reset the super_admin's password and sign in as
+    // them, or promote themselves — this route already accepts both `role` and
+    // `password` for any account.
+    if (target.role === 'super_admin' && actor.role !== 'super_admin') {
+      res.status(403).json({ success: false, error: 'لا تملك صلاحية تعديل حساب سوبر ادمن' });
+      return;
+    }
+    if (role === 'super_admin' && actor.role !== 'super_admin') {
+      res.status(403).json({ success: false, error: 'لا تملك صلاحية منح صلاحية سوبر ادمن' });
+      return;
+    }
+
+    // Deactivating or demoting the last super_admin leaves nobody able to
+    // perform super_admin actions, with no way back through the UI.
+    const losesSuperAdmin = target.role === 'super_admin'
+      && ((role && role !== 'super_admin') || is_active === false);
+    if (losesSuperAdmin) {
+      const [{ count }] = await db('users')
+        .where({ role: 'super_admin', is_active: true })
+        .whereNot('id', id)
+        .count('id as count') as any[];
+      if (Number(count) === 0) {
+        res.status(400).json({ success: false, error: 'لا يمكن تعطيل آخر حساب سوبر ادمن في النظام' });
+        return;
+      }
+    }
+
+    if (is_active === false && actor.user_id === id) {
+      res.status(400).json({ success: false, error: 'لا يمكنك تعطيل حسابك' });
+      return;
+    }
+
     const updates: any = { updated_at: new Date() };
     if (full_name) updates.full_name = full_name;
     if (full_name_ar) updates.full_name_ar = full_name_ar;
-    if (email) updates.email = email;
+    if (email) {
+      // Login looks the address up case-insensitively, so two rows differing
+      // only in case would make which account you reach arbitrary.
+      const normalised = String(email).trim().toLowerCase();
+      const clash = await db('users').whereRaw('LOWER(email) = ?', [normalised]).whereNot('id', id).first();
+      if (clash) { res.status(400).json({ success: false, error: 'البريد الإلكتروني مستخدم بالفعل' }); return; }
+      updates.email = normalised;
+    }
     if (role) updates.role = role;
     if (whatsapp_instance !== undefined) updates.whatsapp_instance = whatsapp_instance || null;
     if (is_active !== undefined) updates.is_active = is_active;
@@ -101,6 +145,24 @@ router.delete('/:id', authorize('super_admin', 'admin'), async (req: Request, re
     const reqUser = (req as any).user;
     if (reqUser.user_id === id) { res.status(400).json({ success: false, error: 'لا يمكنك حذف حسابك' }); return; }
     const db = getDatabase();
+
+    const target = await db('users').where('id', id).first();
+    if (!target) { res.status(404).json({ success: false, error: 'المستخدم غير موجود' }); return; }
+    if (target.role === 'super_admin' && reqUser.role !== 'super_admin') {
+      res.status(403).json({ success: false, error: 'لا تملك صلاحية تعطيل حساب سوبر ادمن' });
+      return;
+    }
+    if (target.role === 'super_admin') {
+      const [{ count }] = await db('users')
+        .where({ role: 'super_admin', is_active: true })
+        .whereNot('id', id)
+        .count('id as count') as any[];
+      if (Number(count) === 0) {
+        res.status(400).json({ success: false, error: 'لا يمكن تعطيل آخر حساب سوبر ادمن في النظام' });
+        return;
+      }
+    }
+
     await db('users').where('id', id).update({ is_active: false, updated_at: new Date() });
     res.json({ success: true, message: 'تم تعطيل المستخدم' });
   } catch (error) { next(error); }
