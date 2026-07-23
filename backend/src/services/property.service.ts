@@ -247,12 +247,14 @@ export class PropertyService {
       .leftJoin('districts as d', 'p.district_id', 'd.id')
       .select('p.*', 'c.name_ar as city_name', 'd.name_ar as district_name')
       .where('p.status', 'available')
-      .whereRaw(
-        `to_tsvector('arabic', coalesce(p.title_ar,'') || ' ' || coalesce(p.description_ar,'')) @@ plainto_tsquery('arabic', ?)`,
-        [text]
-      )
-      .orWhere('p.title_ar', 'ilike', `%${text}%`)
-      .orWhere('p.code', 'ilike', `%${text}%`)
+      .where(function () {
+        this.whereRaw(
+          `to_tsvector('arabic', coalesce(p.title_ar,'') || ' ' || coalesce(p.description_ar,'')) @@ plainto_tsquery('arabic', ?)`,
+          [text]
+        )
+        .orWhere('p.title_ar', 'ilike', `%${text}%`)
+        .orWhere('p.code', 'ilike', `%${text}%`);
+      })
       .orderByRaw('p.is_featured DESC')
       .limit(limit) as unknown as Property[];
   }

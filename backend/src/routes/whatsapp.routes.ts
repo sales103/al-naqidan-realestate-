@@ -1,13 +1,25 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import axios from 'axios';
 import { config } from '../config/index.js';
-import { authenticate } from '../middleware/auth.middleware.js';
+import { authenticate, authorize } from '../middleware/auth.middleware.js';
 
 const router = Router();
 router.use(authenticate);
 
+const ADMIN_ROLES = authorize('super_admin', 'admin');
+
 const evoHeaders = () => ({ apikey: config.whatsapp.evolutionApiKey, 'Content-Type': 'application/json' });
 const evoUrl = (path: string) => `${config.whatsapp.evolutionUrl}${path}`;
+
+const INSTANCE_RE = /^[a-zA-Z0-9_-]{1,64}$/;
+function sanitizeInstance(req: Request, res: Response): string | null {
+  const instance = req.params['instance'] ?? '';
+  if (!INSTANCE_RE.test(instance)) {
+    res.status(400).json({ success: false, error: 'اسم الجهاز غير صالح' });
+    return null;
+  }
+  return instance;
+}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -46,9 +58,10 @@ async function instanceExists(name: string): Promise<boolean> {
 }
 
 // POST /api/whatsapp/connect/:instance
-router.post('/connect/:instance', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+router.post('/connect/:instance', ADMIN_ROLES, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const instance = req.params['instance']!;
+    const instance = sanitizeInstance(req, res);
+    if (!instance) return;
 
     const exists = await instanceExists(instance);
 
@@ -101,7 +114,8 @@ router.post('/connect/:instance', async (req: Request, res: Response, next: Next
 // GET /api/whatsapp/status/:instance
 router.get('/status/:instance', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { instance } = req.params;
+    const instance = sanitizeInstance(req, res);
+    if (!instance) return;
     const r = await axios.get(evoUrl(`/instance/connectionState/${instance}`), { headers: evoHeaders() });
     res.json({ success: true, data: r.data });
   } catch {
@@ -110,9 +124,10 @@ router.get('/status/:instance', async (req: Request, res: Response, next: NextFu
 });
 
 // GET /api/whatsapp/qr/:instance
-router.get('/qr/:instance', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+router.get('/qr/:instance', ADMIN_ROLES, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { instance } = req.params;
+    const instance = sanitizeInstance(req, res);
+    if (!instance) return;
     const r = await axios.get(evoUrl(`/instance/connect/${instance}`), { headers: evoHeaders() });
     const base64 = r.data?.base64 ?? r.data?.qrcode?.base64;
     if (!base64) {
@@ -126,9 +141,10 @@ router.get('/qr/:instance', async (req: Request, res: Response, next: NextFuncti
 });
 
 // DELETE /api/whatsapp/disconnect/:instance
-router.delete('/disconnect/:instance', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+router.delete('/disconnect/:instance', ADMIN_ROLES, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { instance } = req.params;
+    const instance = sanitizeInstance(req, res);
+    if (!instance) return;
     await axios.delete(evoUrl(`/instance/logout/${instance}`), { headers: evoHeaders() });
     res.json({ success: true, message: 'Disconnected' });
   } catch (error: any) {

@@ -112,6 +112,7 @@ export const conversationsApi = {
   messages: (id: string) => api.get(`/conversations/${id}/messages`),
   send: (id: string, text: string) => api.post(`/conversations/${id}/send`, { text }),
   toggleAI: (id: string) => api.patch(`/conversations/${id}/toggle-ai`),
+  markRead: (id: string) => api.patch(`/conversations/${id}/read`),
   remove: (id: string) => api.delete(`/conversations/${id}`),
 };
 

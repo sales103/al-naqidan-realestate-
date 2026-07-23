@@ -134,6 +134,17 @@ router.delete('/:id', async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+router.patch('/:id/read', async (req, res, next) => {
+  try {
+    const db = getDatabase();
+    const conv = await db('conversations').where('id', req.params['id']).first();
+    if (!conv) { res.status(404).json({ success: false, error: 'المحادثة غير موجودة' }); return; }
+    if (!canAccess(req, conv)) { res.status(403).json({ success: false, error: 'لا تملك صلاحية على هذه المحادثة' }); return; }
+    await db('conversations').where('id', req.params['id']).update({ unread_count: 0 });
+    res.json({ success: true });
+  } catch (error) { next(error); }
+});
+
 router.patch('/:id/toggle-ai', async (req, res, next) => {
   try {
     const db = getDatabase();

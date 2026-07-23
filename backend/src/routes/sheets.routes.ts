@@ -1,5 +1,5 @@
 ﻿import { Router, Request, Response, NextFunction } from 'express';
-import { authenticate } from '../middleware/auth.middleware.js';
+import { authenticate, authorize } from '../middleware/auth.middleware.js';
 import { getDatabase } from '../database/connection.js';
 import multer from 'multer';
 import * as XLSX from 'xlsx';
@@ -7,6 +7,7 @@ import { parseLatLngFromMapsUrl } from '../utils/geo.js';
 
 const router = Router();
 router.use(authenticate);
+router.use(authorize('super_admin', 'admin', 'sales_manager'));
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // POST /api/sheets/export-properties

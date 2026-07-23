@@ -230,10 +230,10 @@ export class WhatsAppService {
     }
   }
 
-  async downloadMedia(messageId: string): Promise<Buffer> {
+  async downloadMedia(messageId: string, instance: string = config.whatsapp.instanceName): Promise<Buffer> {
     try {
       const response = await this.client.get(
-        `chat/getBase64FromMediaMessage/${config.whatsapp.instanceName}`,
+        `chat/getBase64FromMediaMessage/${instance}`,
         { params: { message: messageId } }
       );
       const base64 = response.data.base64 as string;

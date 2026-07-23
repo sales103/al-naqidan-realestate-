@@ -479,7 +479,8 @@ const buildConversationHistory = (messages: Message[]): OpenAI.Chat.ChatCompleti
   }));
 
 const buildContextBlock = (client: Client, properties?: Property[]): string => {
-  const now = new Date(Date.now() + 3 * 3600000); // Riyadh time
+  const utc = Date.now() + new Date().getTimezoneOffset() * 60000;
+  const now = new Date(utc + 3 * 3600000); // Riyadh time
   const h = now.getHours();
   const greeting = h < 12 ? 'صباح الخير' : h < 17 ? 'مساء الخير' : 'مساء النور';
 

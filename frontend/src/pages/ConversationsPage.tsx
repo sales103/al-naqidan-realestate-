@@ -368,6 +368,10 @@ export default function ConversationsPage() {
   const handleSelectConv = (conv: any) => {
     setSelectedConv(conv);
     setShowClientPanel(false);
+    if (conv?.unread_count > 0) {
+      conversationsApi.markRead(conv.id).catch(() => {});
+      conv.unread_count = 0;
+    }
   };
 
   const handleBack = () => {

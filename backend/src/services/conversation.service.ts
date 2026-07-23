@@ -126,7 +126,8 @@ function normalizeAr(s: string): string {
 }
 
 function getRiyadhGreeting(): string {
-  const h = new Date(Date.now() + 3 * 3600000).getHours();
+  const utc = Date.now() + new Date().getTimezoneOffset() * 60000;
+  const h = new Date(utc + 3 * 3600000).getHours();
   if (h < 12) return 'صباح الخير';
   if (h < 17) return 'مساء الخير';
   return 'مساء النور';
@@ -945,7 +946,7 @@ export class ConversationService {
 
       if (message.message_type === 'audio' && message.media_url) {
         try {
-          const buf = await whatsappService.downloadMedia(message.whatsapp_message_id!);
+          const buf = await whatsappService.downloadMedia(message.whatsapp_message_id!, this.waInstance(conversation));
           messageContent = await transcribeAudio(buf, message.media_mime_type ?? 'audio/ogg');
           await this.db('messages').where('id', message.id).update({ transcription: messageContent });
         } catch { messageContent = 'رسالة صوتية'; }
@@ -1221,13 +1222,32 @@ export class ConversationService {
     const [msg] = await this.db('messages').insert(clean).returning('*') as Message[];
     if (!msg) throw new Error('Failed to save message');
 
-    // Keep the column the dashboard sorts on current. Bookkeeping — it must
-    // never fail the write that actually delivered the message.
     if (data.conversation_id) {
+      const updates: Record<string, any> = { last_message_at: msg.created_at ?? new Date() };
+      if (data.direction === 'inbound') updates.unread_count = this.db.raw('unread_count + 1');
       this.db('conversations')
         .where('id', data.conversation_id)
-        .update({ last_message_at: msg.created_at ?? new Date() })
-        .catch((e: any) => logger.warn('last_message_at not updated', { error: e?.message }));
+        .update(updates)
+        .catch((e: any) => logger.warn('conversation update failed', { error: e?.message }));
+
+      if (data.direction === 'inbound') {
+        this.db('conversations as cv')
+          .join('clients as cl', 'cv.client_id', 'cl.id')
+          .where('cv.id', data.conversation_id)
+          .select('cl.full_name', 'cl.phone')
+          .first()
+          .then((info: any) => {
+            sseService.broadcast('new_message', {
+              conversation_id: data.conversation_id,
+              direction: data.direction,
+              message_type: data.message_type,
+              content: data.content?.slice(0, 200),
+              clientName: info?.full_name,
+              phone: info?.phone,
+            });
+          })
+          .catch(() => {});
+      }
     }
     return msg;
   }
@@ -1257,7 +1277,7 @@ export class ConversationService {
 
     const BTN: Record<string, string> = {
       intent_rent: 'أبحث عن إيجار', intent_buy: 'أبحث عن شراء', intent_invest: 'أبحث عن استثمار',
-      intent_sell: 'أبيع عقاري', intent_manage: 'أعرض عقاري لإدارة الأملاك',
+      intent_sell: 'أبيع عقاري', intent_manage: 'أعرض عقاري لإدارة الأملاك', intent_complaint: 'تقديم شكوى',
       cat_residential: 'عقار سكني', cat_commercial: 'عقار تجاري',
       type_apt_family: 'شقة عوائل', type_apt_single: 'شقة عزاب',
       type_house: 'بيت أو فيلا', type_land: 'أرض',
@@ -1287,7 +1307,8 @@ export class ConversationService {
   }
 
   private isWithinWorkingHours(): boolean {
-    const riyadh = new Date(Date.now() + 3 * 3600000);
+    const utc = Date.now() + new Date().getTimezoneOffset() * 60000;
+    const riyadh = new Date(utc + 3 * 3600000);
     if (riyadh.getDay() === 5) return false;
     const mins = riyadh.getHours() * 60 + riyadh.getMinutes();
     return (mins >= 570 && mins < 720) || (mins >= 960 && mins < 1290);
@@ -1447,6 +1468,7 @@ export class ConversationService {
 
     for (const url of gallery) {
       await whatsappService.sendImage(client.phone, url, undefined, inst).catch(() => {});
+      await sleep(500);
     }
 
     if (property.latitude && property.longitude) {
