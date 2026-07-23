@@ -433,7 +433,7 @@ export default function UsersPage() {
               </div>
 
               <Field label="البريد الإلكتروني">
-                <Inp type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="user@example.com" dir="ltr" disabled={Boolean(editing)} />
+                <Inp type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="user@example.com" dir="ltr" />
               </Field>
 
               <Field label={editing ? 'كلمة المرور الجديدة (اتركها فارغة للإبقاء)' : 'كلمة المرور'}>
