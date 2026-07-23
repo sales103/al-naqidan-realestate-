@@ -142,16 +142,57 @@ export class WhatsAppService {
     }
   }
 
+  /**
+   * WhatsApp rejects a text body over 4096 characters. The listing text is
+   * built from every match, so a large result set produced one oversized
+   * message that failed outright and left the customer with nothing.
+   */
+  private splitForWhatsapp(text: string, limit = 3500): string[] {
+    if (text.length <= limit) return [text];
+    const chunks: string[] = [];
+    let current = '';
+    // Split on the separator between listings so a property is never cut in half.
+    for (const block of text.split('\n\n───────────\n\n')) {
+      const candidate = current ? `${current}\n\n───────────\n\n${block}` : block;
+      if (candidate.length > limit && current) {
+        chunks.push(current);
+        current = block;
+      } else {
+        current = candidate;
+      }
+    }
+    if (current) chunks.push(current);
+    return chunks;
+  }
+
+  /**
+   * How many photos to attach, regardless of how many listings matched.
+   * The full list still goes out as text — this caps only the media, because
+   * a couple of hundred images back to back floods the customer's chat and is
+   * the pattern that gets a business number flagged for spam.
+   */
+  private static readonly MAX_PROPERTY_IMAGES = 10;
+
   async sendProperties(to: string, properties: Property[], searchSummary: string, instance: string = config.whatsapp.instanceName): Promise<void> {
     const textMessage = formatPropertiesResponse(properties, searchSummary);
-    await this.sendText(to, textMessage, instance);
+    for (const chunk of this.splitForWhatsapp(textMessage)) {
+      await this.sendText(to, chunk, instance);
+      await this.delay(400);
+    }
+
+    const withMedia = properties.slice(0, WhatsAppService.MAX_PROPERTY_IMAGES);
+    if (properties.length > withMedia.length) {
+      logger.info('Property photos capped', {
+        matched: properties.length, sent: withMedia.length,
+      });
+    }
 
     // The client wants a photo with every matching listing, not just the top
     // few — send one per property regardless of how many matched. A single
     // broken image URL used to throw and abort the whole loop, which the
     // caller's try/catch then treated as a full pipeline failure — the
     // customer got the text list but every remaining photo silently vanished.
-    for (const prop of properties) {
+    for (const prop of withMedia) {
       if (prop.main_image_url) {
         try {
           // Include the Maps link in the caption only when there are no
