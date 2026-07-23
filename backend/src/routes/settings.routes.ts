@@ -60,13 +60,27 @@ router.put('/:key', requireAdmin, async (req: Request, res: Response, next: Next
 
     const db = getDatabase();
     const userId = (req as any).user?.user_id;
+    const key = req.params['key'];
+
+    const SECRET_FIELDS = ['openai_key', 'api_key', 'password', 'smtp_password'];
+    const existing = await db('system_settings').where('key', key).first();
+    const merged: Record<string, any> = { ...value };
+    for (const field of SECRET_FIELDS) {
+      const incoming = merged[field];
+      const stored = existing?.value?.[field];
+      // Preserve the stored secret when the caller sent nothing, an empty
+      // string, or the masked placeholder back.
+      if ((!incoming || incoming === '••••••••') && stored) {
+        merged[field] = stored;
+      }
+    }
 
     await db('system_settings')
-      .insert({ key: req.params['key'], value: JSON.stringify(value), description, updated_by: userId, updated_at: new Date() })
+      .insert({ key, value: JSON.stringify(merged), description, updated_by: userId, updated_at: new Date() })
       .onConflict('key')
       .merge(['value', 'description', 'updated_by', 'updated_at']);
 
-    if (req.params['key'] === 'ai') clearAISettingsCache();
+    if (key === 'ai') clearAISettingsCache();
 
     res.json({ success: true, message: 'تم حفظ الإعدادات' });
   } catch (error) { next(error); }
