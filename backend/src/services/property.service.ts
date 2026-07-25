@@ -194,8 +194,22 @@ export class PropertyService {
     return out as T;
   }
 
+  // `code` is NOT NULL on the properties table with no DB-side default or
+  // trigger to fill it — every insert that didn't supply one failed with a
+  // raw Postgres 23502 error, surfaced to the client as an opaque 500.
+  // Generate one here so creation never depends on that being set upstream.
+  private async generateUniqueCode(): Promise<string> {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const candidate = `AQ-${Math.floor(100000 + Math.random() * 900000)}`;
+      const exists = await this.db('properties').where('code', candidate).first();
+      if (!exists) return candidate;
+    }
+    return `AQ-${Date.now()}`;
+  }
+
   async create(data: Omit<Property, 'id' | 'code' | 'created_at' | 'updated_at' | 'view_count' | 'inquiry_count'>): Promise<Property> {
-    const payload = await this.filterToExistingColumns(this.stringifyJsonbArrays(data));
+    const payload = await this.filterToExistingColumns(this.stringifyJsonbArrays(data)) as Record<string, any>;
+    if (!payload['code']) payload['code'] = await this.generateUniqueCode();
     const [property] = await this.db('properties').insert(payload).returning('*') as Property[];
     if (!property) throw new Error('Failed to create property');
     await cacheDel(cacheKeys.dashboardStats());

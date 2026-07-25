@@ -100,7 +100,6 @@ export const usersApi = {
   create:       (data: any)             => api.post('/users', data),
   update:       (id: string, data: any) => api.put(`/users/${id}`, data),
   remove:       (id: string)            => api.delete(`/users/${id}`),
-  resendInvite: (id: string)            => api.post(`/users/${id}/resend-invite`),
 };
 
 // ─── WhatsApp ────────────────────────────────────────────────────────────────

@@ -1,32 +1,13 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { authenticate, authorize } from '../middleware/auth.middleware.js';
 import { getDatabase } from '../database/connection.js';
-import { cacheSet } from '../database/redis.js';
-import { sendMail } from '../services/email.service.js';
 import { audit } from '../services/audit.service.js';
-import { getCompanyName } from '../controllers/auth.controller.js';
 import { config } from '../config/index.js';
 import { logger } from '../config/logger.js';
 import bcrypt from 'bcrypt';
-import crypto from 'crypto';
 
 const router = Router();
 router.use(authenticate);
-
-function buildInviteEmail(companyName: string, fullName: string, link: string): string {
-  return `<div dir="rtl" style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:32px;border:1px solid #e5e7eb;border-radius:16px;">
-  <h2 style="color:#1d4ed8;margin:0 0 8px;">${companyName}</h2>
-  <p style="color:#374151;margin:0 0 20px;">مرحباً ${fullName}،</p>
-  <p style="color:#374151;margin:0 0 24px;">تم إنشاء حسابك في نظام إدارة العقارات. لتفعيل حسابك، اضغط الزر أدناه لتعيين كلمة المرور:</p>
-  <div style="text-align:center;margin-bottom:24px;">
-    <a href="${link}" style="background:#1d4ed8;color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;">تعيين كلمة المرور</a>
-  </div>
-  <p style="color:#6b7280;font-size:13px;">هذا الرابط صالح لمدة 7 أيام.</p>
-  <p style="color:#9ca3af;font-size:12px;">إذا لم تطلب هذا، تجاهل هذا البريد.</p>
-  <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;" />
-  <p style="color:#9ca3af;font-size:12px;">${companyName}</p>
-</div>`;
-}
 
 // GET /api/users — list all users (active and inactive for admin view)
 router.get('/', authorize('super_admin', 'admin', 'sales_manager'), async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -39,105 +20,34 @@ router.get('/', authorize('super_admin', 'admin', 'sales_manager'), async (_req:
   } catch (error) { next(error); }
 });
 
-// POST /api/users — create user (admin-initiated invite)
+// POST /api/users — admin sets the employee's email + password directly.
+// No email is ever sent — the admin hands the credentials to the employee
+// themselves (in person, WhatsApp, whatever they prefer).
 router.post('/', authorize('super_admin', 'admin'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { full_name, full_name_ar, email, role, whatsapp_instance } = req.body as any;
+    const { full_name, full_name_ar, email, password, role, whatsapp_instance } = req.body as any;
     if (!email || !full_name) { res.status(400).json({ success: false, error: 'الاسم والبريد مطلوبة' }); return; }
+    if (!password || String(password).length < 8) {
+      res.status(400).json({ success: false, error: 'كلمة المرور يجب ألا تقل عن 8 أحرف' });
+      return;
+    }
     const db = getDatabase();
     const exists = await db('users').whereRaw('LOWER(email) = ?', [String(email).trim().toLowerCase()]).first();
     if (exists) { res.status(400).json({ success: false, error: 'البريد الإلكتروني مستخدم بالفعل' }); return; }
 
-    // Generate invite token
-    const token = crypto.randomBytes(32).toString('hex');
-    await cacheSet(`invite:${token}`, { email: String(email).trim().toLowerCase(), full_name }, 604800); // 7 days
-
+    const hash = await bcrypt.hash(password, config.auth.bcryptRounds);
     const [user] = await db('users').insert({
       full_name, full_name_ar: full_name_ar ?? full_name,
       email: String(email).trim().toLowerCase(),
-      password_hash: 'INVITE_PENDING',
+      password_hash: hash,
       role: role ?? 'sales_agent',
       whatsapp_instance: whatsapp_instance ?? null,
-      is_active: false,
+      is_active: true,
     }).returning(['id','full_name','full_name_ar','email','role','whatsapp_instance','is_active','created_at']);
 
-    // Send invite email. Resend's free tier only delivers to the account
-    // owner's own address until a domain is verified, so delivery to an
-    // employee can legitimately fail — surface that instead of hiding it, and
-    // always return the link so the admin can share it manually (WhatsApp…).
-    const companyName = await getCompanyName();
-    const frontendUrl = config.frontendUrl || 'https://al-naqidan-realestate.vercel.app';
-    const link = `${frontendUrl}/set-password?token=${token}`;
-    let emailSent = false;
-    let emailError: string | undefined;
-    try {
-      await sendMail(
-        String(email).trim().toLowerCase(),
-        `تفعيل حسابك - ${companyName}`,
-        buildInviteEmail(companyName, full_name_ar ?? full_name, link),
-      );
-      emailSent = true;
-    } catch (err: any) {
-      emailError = err?.message ?? 'فشل إرسال البريد';
-      logger.error('Failed to send invite email', { error: err });
-    }
-
-    logger.info('User created with invite', { userId: user.id, email, emailSent });
+    logger.info('User created by admin', { userId: user.id, email });
     await audit({ req, action: 'user.create', entityType: 'user', entityId: user.id, details: { email: user.email, role: user.role } });
-    res.status(201).json({
-      success: true,
-      data: user,
-      invite_link: link,
-      email_sent: emailSent,
-      email_error: emailError,
-      message: emailSent
-        ? 'تم إنشاء المستخدم وإرسال رابط التفعيل إلى بريده'
-        : 'تم إنشاء المستخدم لكن تعذّر إرسال البريد — انسخ رابط التفعيل وأرسله للموظف',
-    });
-  } catch (error) { next(error); }
-});
-
-// POST /api/users/:id/resend-invite — resend invite email
-router.post('/:id/resend-invite', authorize('super_admin', 'admin'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  try {
-    const db = getDatabase();
-    const user = await db('users').where('id', req.params['id']).first();
-    if (!user) { res.status(404).json({ success: false, error: 'المستخدم غير موجود' }); return; }
-    if (user.is_active && user.password_hash !== 'INVITE_PENDING') {
-      res.status(400).json({ success: false, error: 'الموظف مفعّل بالفعل' });
-      return;
-    }
-
-    const token = crypto.randomBytes(32).toString('hex');
-    await cacheSet(`invite:${token}`, { email: user.email, full_name: user.full_name_ar ?? user.full_name }, 604800);
-
-    const companyName = await getCompanyName();
-    const frontendUrl = config.frontendUrl || 'https://al-naqidan-realestate.vercel.app';
-    const link = `${frontendUrl}/set-password?token=${token}`;
-    let emailSent = false;
-    let emailError: string | undefined;
-    try {
-      await sendMail(
-        user.email,
-        `تفعيل حسابك - ${companyName}`,
-        buildInviteEmail(companyName, user.full_name_ar ?? user.full_name, link),
-      );
-      emailSent = true;
-    } catch (err: any) {
-      emailError = err?.message ?? 'فشل إرسال البريد';
-      logger.error('Failed to resend invite email', { error: err });
-    }
-
-    await audit({ req, action: 'user.invite_resend', entityType: 'user', entityId: user.id, details: { email: user.email } });
-    res.json({
-      success: true,
-      invite_link: link,
-      email_sent: emailSent,
-      email_error: emailError,
-      message: emailSent
-        ? 'تم إعادة إرسال رابط التفعيل إلى بريد الموظف'
-        : 'تعذّر إرسال البريد — انسخ رابط التفعيل وأرسله للموظف',
-    });
+    res.status(201).json({ success: true, data: user, message: 'تم إنشاء حساب الموظف' });
   } catch (error) { next(error); }
 });
 
