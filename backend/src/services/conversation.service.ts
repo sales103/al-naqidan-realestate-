@@ -422,12 +422,23 @@ export class ConversationService {
     // otherwise "2" during the type/purpose steps would misfire.
     const CODE_PATTERN = /\b[A-Za-z]{2,8}-[A-Za-z0-9]*\d[A-Za-z0-9]*(?:-\d+)?\b/;
     const DETAIL_WORDS = ['تفاصيل', 'تفصيل', 'معلومات عن', 'الكود'];
+    // Asking where a listing is is a details request too. Without these, a bare
+    // "الموقع" fell through to the search, which found nothing and answered
+    // "لم أجد عقاراً مطابقاً" to a customer who only wanted the address.
+    const LOCATION_WORDS = ['موقع', 'عنوان', 'خريطه', 'لوكيشن', 'location'];
+    // ...but "وين مكتبكم" is about the office, not a listing.
+    const OFFICE_WORDS = ['مكتبكم', 'مكتبك', 'شركتكم', 'فرعكم', 'مقركم'];
     const rawText = message.content ?? '';
     const normDetail = normalizeAr(rawText);
     const hasCode = CODE_PATTERN.test(rawText);
     const hasDetailWord = DETAIL_WORDS.some((w) => normDetail.includes(normalizeAr(w)));
-    const hasNumber = /\d/.test(normDetail);
-    if (hasCode || (hasDetailWord && hasNumber && (ctx.last_shown_properties?.length ?? 0) > 0)) {
+    const hasLocationWord = LOCATION_WORDS.some((w) => normDetail.includes(normalizeAr(w)));
+    const asksAboutOffice = OFFICE_WORDS.some((w) => normDetail.includes(normalizeAr(w)));
+    const hasShown = (ctx.last_shown_properties?.length ?? 0) > 0;
+    // A number is no longer required: "تفاصيل" or "الموقع" on its own is a
+    // clear request once listings have been sent — handleDetails resolves
+    // which one, and asks only when the batch is genuinely ambiguous.
+    if (hasCode || ((hasDetailWord || (hasLocationWord && !asksAboutOffice)) && hasShown)) {
       await this.handleDetails(message, client, conversation, ctx);
       return;
     }
@@ -1445,8 +1456,9 @@ export class ConversationService {
       property = await propertyService.findByCode(codeMatch[0]);
     }
 
+    const shown = ctx.last_shown_properties ?? [];
+
     if (!property) {
-      const shown = ctx.last_shown_properties ?? [];
       const numMatch = normalizeAr(raw).match(/\d+/);
       const idx = numMatch ? parseInt(numMatch[0], 10) : NaN;
       if (shown.length && idx >= 1 && idx <= shown.length) {
@@ -1454,8 +1466,17 @@ export class ConversationService {
       }
     }
 
+    // No code and no number. When only one listing was sent there is nothing to
+    // disambiguate — asking "which one?" about a single property is the kind of
+    // stonewalling that made a plain "الموقع" feel like a refusal.
+    if (!property && shown.length === 1) {
+      property = await propertyService.findById(shown[0]!);
+    }
+
     if (!property) {
-      await this.reply(client, conversation, 'اكتب كود العقار، أو رقمه من آخر قائمة أرسلتها لك، عشان أعرض لك التفاصيل الكاملة.');
+      await this.reply(client, conversation, shown.length > 1
+        ? `عن أي عقار تحديداً؟ أرسل رقمه من القائمة (من 1 إلى ${shown.length}) أو كوده.`
+        : 'اكتب كود العقار، أو رقمه من آخر قائمة أرسلتها لك، عشان أعرض لك التفاصيل الكاملة.');
       return;
     }
 
