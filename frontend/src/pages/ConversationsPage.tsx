@@ -201,7 +201,7 @@ function ClientPanel({ conv, onClose }: { conv: any; onClose: () => void }) {
           <XMarkIcon className="w-4 h-4" />
         </button>
       </div>
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4">
         <div className="flex flex-col items-center text-center py-2">
           <div className="w-14 h-14 rounded-full flex items-center justify-center text-white text-xl font-bold mb-2"
             style={{ background: grad(name) }}>{name.charAt(0)}</div>
@@ -465,7 +465,7 @@ export default function ConversationsPage() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden">
             {filtered.length === 0 ? (
               <div className="text-center py-12 px-4">
                 <ChatBubbleLeftRightIcon className="w-10 h-10 mx-auto mb-2" style={{ color: '#D1D9EC' }} />
@@ -556,7 +556,7 @@ export default function ConversationsPage() {
                 )}
 
                 {/* Messages */}
-                <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3">
+                <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 space-y-3">
                   {messages.length === 0 ? (
                     <div className="text-center py-16">
                       <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ background: 'rgba(59,91,219,0.07)' }}>

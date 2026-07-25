@@ -283,7 +283,7 @@ export default function UsersPage() {
       {/* ── Create / Edit Modal ───────────────────────────────────────────── */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(6,12,24,0.65)', backdropFilter: 'blur(6px)' }}>
-          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto fade-in" style={{ background: '#fff', borderRadius: '20px', boxShadow: '0 24px 64px rgba(6,12,24,0.25)', border: '1px solid rgba(59,91,219,0.1)' }}>
+          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto overflow-x-hidden fade-in" style={{ background: '#fff', borderRadius: '20px', boxShadow: '0 24px 64px rgba(6,12,24,0.25)', border: '1px solid rgba(59,91,219,0.1)' }}>
 
             {/* Modal Header */}
             <div className="px-6 py-5 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(59,91,219,0.07)' }}>

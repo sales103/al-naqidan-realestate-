@@ -170,7 +170,7 @@ export default function Header({ onMenuClick }: Props) {
                   </button>
                 )}
               </div>
-              <div className="max-h-72 overflow-y-auto">
+              <div className="max-h-72 overflow-y-auto overflow-x-hidden">
                 {notifications.length === 0 ? (
                   <div className="py-10 text-center">
                     <BellIcon className="w-8 h-8 mx-auto mb-2" style={{ color: '#D1D9F0' }} />

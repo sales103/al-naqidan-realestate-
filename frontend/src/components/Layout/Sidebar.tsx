@@ -89,7 +89,7 @@ export default function Sidebar({ open, onClose }: Props) {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+        <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto overflow-x-hidden">
           <p className="text-[10px] font-bold px-3 mb-3 tracking-widest uppercase" style={{ color: 'rgba(200,168,75,0.45)' }}>الرئيسية</p>
 
           {navMain.map(item => (

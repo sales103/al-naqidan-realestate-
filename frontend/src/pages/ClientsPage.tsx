@@ -106,7 +106,7 @@ function ClientModal({ client, onClose }: { client?: any; onClose: () => void })
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(6,12,24,0.6)', backdropFilter: 'blur(6px)' }} onClick={onClose}>
-      <div className="w-full max-w-lg max-h-[88vh] overflow-y-auto"
+      <div className="w-full max-w-lg max-h-[88vh] overflow-y-auto overflow-x-hidden"
         style={{ background: '#fff', borderRadius: '20px', boxShadow: '0 24px 64px rgba(6,12,24,0.28)' }}
         onClick={(e) => e.stopPropagation()}>
 
@@ -219,7 +219,7 @@ function MatchesModal({ client, onClose }: { client: any; onClose: () => void })
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(6,12,24,0.6)', backdropFilter: 'blur(6px)' }} onClick={onClose}>
-      <div className="w-full max-w-2xl max-h-[85vh] overflow-y-auto"
+      <div className="w-full max-w-2xl max-h-[85vh] overflow-y-auto overflow-x-hidden"
         style={{ background: '#fff', borderRadius: '20px', boxShadow: '0 24px 64px rgba(6,12,24,0.28)' }}
         onClick={(e) => e.stopPropagation()}>
 
