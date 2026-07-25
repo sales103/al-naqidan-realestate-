@@ -33,9 +33,15 @@ export async function audit(opts: {
       ip: opts.req?.ip ?? null,
     });
   } catch (err) {
+    // Same truncation problem as the global error handler: knex prefixes the
+    // message with the whole statement, so log Postgres's short fields first.
+    const pg = err as any;
     logger.warn('audit: failed to record entry', {
       action: opts.action,
-      error: (err as any)?.message,
+      pg_code: pg?.code,
+      pg_detail: pg?.detail,
+      pg_column: pg?.column,
+      error: pg?.message,
     });
   }
 }

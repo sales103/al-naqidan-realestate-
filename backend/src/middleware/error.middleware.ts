@@ -55,12 +55,21 @@ export const errorHandler = (
     return;
   }
 
+  // A knex/pg failure puts the entire SQL statement at the front of `message`,
+  // so the part that actually says what went wrong is cut off by every log
+  // viewer. Surface Postgres's own short, structured fields first instead.
+  const pg = err as any;
   logger.error('Unhandled error', {
-    error: err.message,
-    stack: err.stack,
+    pg_code: pg.code,
+    pg_detail: pg.detail,
+    pg_column: pg.column,
+    pg_constraint: pg.constraint,
+    pg_table: pg.table,
     url: req.originalUrl,
     method: req.method,
     user_id: req.user?.user_id,
+    error: err.message,
+    stack: err.stack,
   });
 
   res.status(500).json({
