@@ -424,27 +424,48 @@ export const formatPropertyDetails = (property: Property): string => {
   const deal = property.purpose === 'rent' ? 'للإيجار' : 'للبيع';
   const location = [property.district_name, property.city_name].filter(Boolean).join(' – ');
 
+  const p = property as any;
   const lines: string[] = [`*${type} ${deal}*`];
   if (location) lines.push(location);
-  if (property.price) lines.push(`السعر: *${Number(property.price).toLocaleString('en-US')} ريال*`);
+  if (p.address) lines.push(`العنوان: ${p.address}`);
+  if (property.price) {
+    const negotiable = property.negotiable ? ' (قابل للتفاوض)' : '';
+    lines.push(`السعر: *${Number(property.price).toLocaleString('en-US')} ريال*${negotiable}`);
+  }
+  if (p.area_sqm) lines.push(`المساحة: ${Number(p.area_sqm).toLocaleString('en-US')} م²`);
   if (property.rooms) lines.push(`${property.rooms} غرف`);
-  if ((property as any).bathrooms) lines.push(`${(property as any).bathrooms} دورات مياه`);
-  if ((property as any).kitchens) lines.push(`${(property as any).kitchens} مطبخ`);
-  if ((property as any).living_rooms) lines.push(`${(property as any).living_rooms} صالة`);
+  if (p.bathrooms) lines.push(`${p.bathrooms} دورات مياه`);
+  if (p.kitchens) lines.push(`${p.kitchens} مطبخ`);
+  if (p.living_rooms) lines.push(`${p.living_rooms} صالة`);
   if (property.floor_number !== undefined && property.floor_number !== null) {
     lines.push(property.floor_number === 0 ? 'الدور: الأرضي' : `الدور: ${property.floor_number}`);
   }
+  if (p.total_floors) lines.push(`عدد الأدوار: ${p.total_floors}`);
+  if (p.parking_spaces) lines.push(`مواقف سيارات: ${p.parking_spaces}`);
+  if (p.age_years !== undefined && p.age_years !== null) {
+    lines.push(p.age_years === 0 ? 'العمر: جديد' : `عمر العقار: ${p.age_years} سنة`);
+  }
+  const occupancyAr: Record<string, string> = { family: 'عوائل', singles: 'عزاب' };
+  if (p.occupancy_type && occupancyAr[p.occupancy_type]) lines.push(`الفئة: ${occupancyAr[p.occupancy_type]}`);
+  const entranceAr: Record<string, string> = { private: 'خاص', shared: 'مشترك' };
+  if (p.entrance_type && entranceAr[p.entrance_type]) lines.push(`المدخل: ${entranceAr[p.entrance_type]}`);
 
-  const features = [...(property.features ?? []), ...((property as any).amenities ?? [])];
+  const features = [...(property.features ?? []), ...(p.amenities ?? [])];
   if (features.length) lines.push('', 'المميزات:', ...features.map((f) => `- ${f}`));
 
-  if (property.description_ar) lines.push('', property.description_ar);
-
-  // A pinned location follows as a separate WhatsApp message when coordinates
-  // exist; when only a Maps link is on file, give it here as clickable text.
-  if (property.google_maps_url && !(property.latitude && property.longitude)) {
-    lines.push('', `الموقع على الخريطة: ${property.google_maps_url}`);
+  if (property.description_ar || property.description) {
+    lines.push('', String(property.description_ar || property.description));
   }
+
+  // The customer asked for this listing specifically, so always hand over a
+  // tappable map link — even when coordinates are also on file and a pinned
+  // location follows as its own WhatsApp message. When only coordinates exist,
+  // build the link from them so a location is never missing.
+  const mapsUrl = property.google_maps_url
+    ?? (property.latitude && property.longitude
+      ? `https://maps.google.com/?q=${property.latitude},${property.longitude}`
+      : undefined);
+  if (mapsUrl) lines.push('', `الموقع على الخريطة: ${mapsUrl}`);
 
   if (property.code) lines.push('', `الكود: ${property.code}`);
 

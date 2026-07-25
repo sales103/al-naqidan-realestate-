@@ -30,7 +30,14 @@ export class PropertyService {
 
   private async filterToExistingColumns<T extends Record<string, any>>(data: T): Promise<Partial<T>> {
     const cols = await this.existingColumns();
-    return Object.fromEntries(Object.entries(data).filter(([k]) => cols.has(k))) as Partial<T>;
+    const entries = Object.entries(data);
+    // Dropping a field the caller meant to save is exactly how a value like
+    // google_maps_url can go missing without a single error anywhere. Say so.
+    const dropped = entries.filter(([k, v]) => !cols.has(k) && v !== undefined).map(([k]) => k);
+    if (dropped.length) {
+      logger.warn('properties: ignoring values for columns that do not exist', { dropped });
+    }
+    return Object.fromEntries(entries.filter(([k]) => cols.has(k))) as Partial<T>;
   }
 
   async search(params: PropertySearchParams): Promise<PropertySearchResult> {

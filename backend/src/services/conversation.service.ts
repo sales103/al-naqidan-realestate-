@@ -223,15 +223,13 @@ export class ConversationService {
 
     const lastSeen = ctx.last_seen ? Date.parse(ctx.last_seen) : NaN;
     if (Number.isFinite(lastSeen) && Date.now() - lastSeen > ConversationService.STALE_AFTER_MS) {
-      logger.info('Conversation went cold — restarting from the menu', {
+      logger.info('Conversation went cold — starting over from scratch', {
         conversationId, idleHours: Math.round((Date.now() - lastSeen) / 3600000),
       });
-      // Keep what still matters a day later: which listings this customer has
-      // already been sent, so a fresh search does not repeat them.
-      return {
-        state: 'welcome',
-        shown_property_ids: ctx.shown_property_ids,
-      };
+      // A day later the customer is treated as brand new: nothing is carried
+      // over, not even which listings they were shown, so the same options may
+      // be offered again from a clean slate.
+      return { state: 'welcome' };
     }
     return ctx;
   }
@@ -1261,7 +1259,14 @@ export class ConversationService {
    */
   async getConversationHistory(conversationId: string, limit = 10, forAI = false): Promise<Message[]> {
     const q = this.db('messages').where('conversation_id', conversationId);
-    if (forAI) q.where((b) => b.whereNull('exclude_from_ai').orWhere('exclude_from_ai', false));
+    if (forAI) {
+      q.where((b) => b.whereNull('exclude_from_ai').orWhere('exclude_from_ai', false));
+      // The flow state resets after a day of silence, so the model must forget
+      // on the same clock — otherwise it greets a "new" customer while still
+      // quoting what they said last week. Staff reading the thread in the
+      // dashboard still see the whole history; only the AI's view is cut.
+      q.where('created_at', '>', new Date(Date.now() - ConversationService.STALE_AFTER_MS));
+    }
     return q.orderBy('created_at', 'desc').limit(limit)
       .then((msgs: Message[]) => msgs.reverse());
   }
@@ -1471,11 +1476,19 @@ export class ConversationService {
       await sleep(500);
     }
 
+    // The map link now always rides along in the details text, so a failure
+    // here costs the pin but never the location itself. Still log it — this
+    // used to be swallowed silently, which is why a missing pin looked like
+    // the bot simply ignoring a location that was on file.
     if (property.latitude && property.longitude) {
       await whatsappService.sendLocation(
         client.phone, property.latitude, property.longitude,
         property.title_ar ?? property.title, property.address, inst,
-      ).catch(() => {});
+      ).catch((e: any) => {
+        logger.warn('sendLocation failed — customer still has the map link', {
+          propertyId: property.id, error: e?.message,
+        });
+      });
     }
     await propertyService.incrementViewCount(property.id).catch(() => {});
   }
