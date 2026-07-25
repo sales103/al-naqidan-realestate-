@@ -7,7 +7,7 @@ import { parseLatLngFromMapsUrl } from '../utils/geo.js';
 import type { PropertySearchParams } from '../types/index.js';
 
 const searchSchema = z.object({
-  property_type: z.enum(['land','apartment','villa','building','office','showroom','warehouse','farm','investment_project','other']).optional(),
+  property_type: z.enum(['land','apartment','villa','building','office','showroom','warehouse','farm','rest_house','investment_project','other']).optional(),
   city_id: z.coerce.number().optional(),
   district_id: z.coerce.number().optional(),
   price_min: z.coerce.number().min(0).optional(),
@@ -26,7 +26,7 @@ const createSchema = z.object({
   title_ar: z.string().optional(),
   description: z.string().optional(),
   description_ar: z.string().optional(),
-  property_type: z.enum(['land','apartment','villa','building','office','showroom','warehouse','farm','investment_project','other']),
+  property_type: z.enum(['land','apartment','villa','building','office','showroom','warehouse','farm','rest_house','investment_project','other']),
   purpose: z.enum(['sale','rent','both']).default('sale'),
   // Lets the bot tell a شقة عزاب from a شقة عوائل. null = not specified, which
   // keeps the listing eligible for every request rather than excluding it.

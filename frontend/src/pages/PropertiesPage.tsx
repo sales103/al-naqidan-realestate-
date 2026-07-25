@@ -12,7 +12,7 @@ import toast from 'react-hot-toast';
 const propertyTypeLabels: Record<string, string> = {
   land: 'أرض', apartment: 'شقة', villa: 'فيلا', building: 'عمارة',
   office: 'مكتب', showroom: 'معرض', warehouse: 'مستودع',
-  farm: 'مزرعة', investment_project: 'مشروع استثماري', other: 'أخرى',
+  farm: 'مزرعة', rest_house: 'استراحة', investment_project: 'مشروع استثماري', other: 'أخرى',
 };
 
 const purposeLabels: Record<string, string> = {

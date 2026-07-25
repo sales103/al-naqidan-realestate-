@@ -4,7 +4,7 @@
 
 export type UserRole = 'super_admin' | 'admin' | 'sales_manager' | 'sales_agent' | 'marketer' | 'customer_service' | 'viewer';
 
-export type PropertyType = 'land' | 'apartment' | 'villa' | 'building' | 'office' | 'showroom' | 'warehouse' | 'farm' | 'investment_project' | 'other';
+export type PropertyType = 'land' | 'apartment' | 'villa' | 'building' | 'office' | 'showroom' | 'warehouse' | 'farm' | 'rest_house' | 'investment_project' | 'other';
 
 export type PropertyStatus = 'available' | 'reserved' | 'sold' | 'rented' | 'under_maintenance' | 'coming_soon' | 'hidden';
 

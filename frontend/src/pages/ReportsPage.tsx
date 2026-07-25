@@ -10,7 +10,7 @@ import { dashboardApi } from '../services/api.ts';
 const propertyTypeAr: Record<string, string> = {
   land: 'أراضي', apartment: 'شقق', villa: 'فلل', building: 'عمائر',
   office: 'مكاتب', showroom: 'معارض', warehouse: 'مستودعات',
-  farm: 'مزارع', investment_project: 'مشاريع', other: 'أخرى',
+  farm: 'مزارع', rest_house: 'استراحات', investment_project: 'مشاريع', other: 'أخرى',
 };
 
 const clientStatusAr: Record<string, { label: string; color: string }> = {

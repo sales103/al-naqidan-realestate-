@@ -133,6 +133,40 @@ const MIGRATIONS: { name: string; sql: string }[] = [
       CREATE INDEX IF NOT EXISTS audit_logs_user_id_idx ON audit_logs (user_id);
     `,
   },
+  {
+    // 'rest_house' joins the property types. An استراحة is a category of its
+    // own in this market; it used to be filed under 'farm', so customers
+    // asking for one were shown مزارع and the dashboard offered no way to list
+    // one properly.
+    //
+    // If the live table constrains property_type (or the legacy `type` column
+    // that mirrors it) to a fixed list, the new value would be rejected on
+    // write. Drop any such CHECK rather than guess at its contents — the API
+    // validates the type with zod on every write, so the list is enforced in
+    // one place instead of two that can drift apart.
+    name: '010_property_type_rest_house',
+    sql: `
+      DO $$
+      DECLARE c record;
+      BEGIN
+        FOR c IN
+          SELECT con.conname
+          FROM pg_constraint con
+          JOIN pg_class rel ON rel.oid = con.conrelid
+          WHERE rel.relname = 'properties'
+            AND con.contype = 'c'
+            AND EXISTS (
+              SELECT 1 FROM unnest(con.conkey) k
+              JOIN pg_attribute a ON a.attrelid = rel.oid AND a.attnum = k
+              WHERE a.attname IN ('property_type', 'type')
+            )
+        LOOP
+          EXECUTE format('ALTER TABLE properties DROP CONSTRAINT %I', c.conname);
+          RAISE NOTICE 'dropped property type CHECK: %', c.conname;
+        END LOOP;
+      END $$;
+    `,
+  },
 ];
 
 async function ensureMigrationsTable(): Promise<void> {

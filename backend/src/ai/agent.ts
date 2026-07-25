@@ -152,7 +152,7 @@ export const processMessage = async (
       ...historyMessages,
       {
         role: 'user',
-        content: messageContent + '\n\n[SYSTEM: في نهاية ردك أضف سطراً بهذا الشكل بالضبط. property_type و purpose يجب أن تكونا بالإنجليزية من القيم المذكورة فقط أو null. special_requirements: قائمة كلمات عربية قصيرة لأي ميزة محددة ذكرها العميل (مثل "مطبخ راكب"، "قريب من مدرسة")، أو null إن لم يذكر شيئاً:\nJSON:{"intent":"search_property|property_details|price_inquiry|appointment_request|greeting|complaint|human_agent_request|general_inquiry|unknown","budget_max":null,"budget_min":null,"property_type":"land|apartment|villa|building|office|showroom|warehouse|farm|other|null","city":null,"district":null,"rooms":null,"purpose":"sale|rent|null","special_requirements":null,"client_name":null,"urgency":"low|medium|high","sentiment":"positive|neutral|negative"}]',
+        content: messageContent + '\n\n[SYSTEM: في نهاية ردك أضف سطراً بهذا الشكل بالضبط. property_type و purpose يجب أن تكونا بالإنجليزية من القيم المذكورة فقط أو null. special_requirements: قائمة كلمات عربية قصيرة لأي ميزة محددة ذكرها العميل (مثل "مطبخ راكب"، "قريب من مدرسة")، أو null إن لم يذكر شيئاً:\nJSON:{"intent":"search_property|property_details|price_inquiry|appointment_request|greeting|complaint|human_agent_request|general_inquiry|unknown","budget_max":null,"budget_min":null,"property_type":"land|apartment|villa|building|office|showroom|warehouse|farm|rest_house|other|null","city":null,"district":null,"rooms":null,"purpose":"sale|rent|null","special_requirements":null,"client_name":null,"urgency":"low|medium|high","sentiment":"positive|neutral|negative"}]',
       },
     ];
 
@@ -212,7 +212,11 @@ const PROPERTY_TYPE_NORMALIZE: Record<string, string> = {
   office: 'office', 'مكتب': 'office',
   showroom: 'showroom', 'محل': 'showroom', 'صالة': 'showroom', 'صاله': 'showroom',
   warehouse: 'warehouse', 'مستودع': 'warehouse',
-  farm: 'farm', 'مزرعة': 'farm', 'مزرعه': 'farm', 'استراحة': 'farm', 'استراحه': 'farm',
+  farm: 'farm', 'مزرعة': 'farm', 'مزرعه': 'farm',
+  // An استراحة is its own thing in this market, not a farm. Filing it under
+  // farm is why asking for one returned مزارع — or nothing at all.
+  rest_house: 'rest_house', 'استراحة': 'rest_house', 'استراحه': 'rest_house',
+  'استراحات': 'rest_house', 'شاليه': 'rest_house', 'شاليهات': 'rest_house',
   investment_project: 'investment_project',
   other: 'other',
 };
@@ -385,7 +389,7 @@ export const pickThanks = (): string => pick(THANKS);
 export const formatPropertyMessage = (property: Property, index: number): string => {
   const typeAr: Record<string, string> = {
     land: 'أرض', apartment: 'شقة', villa: 'فيلا', building: 'عمارة',
-    office: 'مكتب', showroom: 'معرض', warehouse: 'مستودع', farm: 'مزرعة',
+    office: 'مكتب', showroom: 'معرض', warehouse: 'مستودع', farm: 'مزرعة', rest_house: 'استراحة',
     investment_project: 'مشروع استثماري', other: 'عقار',
   };
   const type = typeAr[property.property_type ?? ''] ?? 'عقار';
@@ -417,7 +421,7 @@ export const formatPropertyMessage = (property: Property, index: number): string
 export const formatPropertyDetails = (property: Property): string => {
   const typeAr: Record<string, string> = {
     land: 'أرض', apartment: 'شقة', villa: 'فيلا', building: 'عمارة',
-    office: 'مكتب', showroom: 'معرض', warehouse: 'مستودع', farm: 'مزرعة',
+    office: 'مكتب', showroom: 'معرض', warehouse: 'مستودع', farm: 'مزرعة', rest_house: 'استراحة',
     investment_project: 'مشروع استثماري', other: 'عقار',
   };
   const type = typeAr[property.property_type ?? ''] ?? 'عقار';
@@ -523,7 +527,7 @@ const buildContextBlock = (client: Client, properties?: Property[]): string => {
     // the dozens.
     ctx += `\n\nعقارات متاحة ومطابقة في قاعدة البيانات (${properties.length} إجمالاً — القائمة الكاملة ستُرسل بعد ردك كبطاقات منفصلة، لا تكررها هنا):\n`;
     ctx += properties.slice(0, 5).map((p, i) => {
-      const typeAr: Record<string, string> = { land:'أرض', apartment:'شقة', villa:'فيلا', building:'عمارة', office:'مكتب', showroom:'معرض', warehouse:'مستودع', farm:'مزرعة', investment_project:'مشروع استثماري', other:'أخرى' };
+      const typeAr: Record<string, string> = { land:'أرض', apartment:'شقة', villa:'فيلا', building:'عمارة', office:'مكتب', showroom:'معرض', warehouse:'مستودع', farm:'مزرعة', rest_house:'استراحة', investment_project:'مشروع استثماري', other:'أخرى' };
       const loc = [p.district_name, p.city_name].filter(Boolean).join(' - ');
       const feats = [...(p.features ?? []), ...((p as any).amenities ?? [])];
       const featsStr = feats.length ? ` | مميزات: ${feats.join('، ')}` : '';

@@ -95,6 +95,7 @@ const PROPERTY_TYPE_MAP: Record<string, {
   office:           { db_types: ['office'],             label: 'مكتب' },
   warehouse:        { db_types: ['warehouse'],          label: 'مستودع' },
   land:             { db_types: ['land'],               label: 'أرض' },
+  rest_house:       { db_types: ['rest_house'],          label: 'استراحة' },
 };
 
 // =============================================================================
@@ -491,7 +492,7 @@ export class ConversationService {
     if (isNew || ctx.state === 'welcome') { await this.stepWelcome(client, conversation, ctx, isNew); return; }
     if (ctx.state === 'ai' || ctx.state === 'escalated') { await this.processWithAI(message, client, conversation, ctx, payload); return; }
     if (ctx.state === 'intent') { await this.stepIntent(clickedId, text, client, conversation, ctx); return; }
-    if (ctx.state === 'category') { await this.stepCategory(clickedId, text, client, conversation, ctx); return; }
+    if (ctx.state === 'category') { await this.stepCategory(clickedId, text, client, conversation, ctx, message); return; }
     if (ctx.state === 'type') { await this.stepType(clickedId, text, client, conversation, ctx, message); return; }
     if (ctx.state === 'entry') { await this.stepEntry(clickedId, text, client, conversation, ctx, message); return; }
     if (ctx.state === 'booking_time') { await this.stepBookingTime(clickedId, text, client, conversation, ctx); return; }
@@ -654,6 +655,7 @@ export class ConversationService {
       const typeAr: Record<string, string> = {
         land: 'أرض', apartment: 'شقة', villa: 'فيلا', building: 'عمارة', office: 'مكتب',
         showroom: 'محل أو صالة تجارية', warehouse: 'مستودع', farm: 'مزرعة',
+        rest_house: 'استراحة',
       };
       const lastTypes: string[] = (client as any).preferred_property_types ?? [];
       const lastLabel = lastTypes.map((t) => typeAr[t]).filter(Boolean)[0];
@@ -733,9 +735,13 @@ export class ConversationService {
 
     // rent / buy / invest all continue into the existing category → type flow,
     // with the purpose already known so it isn't asked again at the end.
-    await this.askOptions(client, conversation, { ...ctx, purpose }, 'category', 'نوع العقار', 'تبحث عن عقار سكني أم تجاري؟', [
+    // An استراحة is neither residential nor commercial, and burying it in
+    // either menu is why customers asking for one never found it. It gets its
+    // own row, and goes straight to the search — there is no sub-type to ask.
+    await this.askOptions(client, conversation, { ...ctx, purpose }, 'category', 'نوع العقار', 'وش نوع العقار اللي تبحث عنه؟', [
       { id: 'cat_residential', title: 'سكني', keywords: ['سكني', 'سكن', 'شقه', 'شقة', 'بيت', 'فيلا', 'عوايل', 'عزاب'] },
       { id: 'cat_commercial',  title: 'تجاري', keywords: ['تجاري', 'محل', 'صاله', 'معرض', 'مكتب', 'مستودع'] },
+      { id: 'cat_rest_house',  title: 'استراحة', keywords: ['استراحه', 'استراحات', 'شاليه', 'شاليهات', 'مخيم'] },
     ]);
   }
 
@@ -745,7 +751,7 @@ export class ConversationService {
 
   private async stepCategory(
     clickedId: string | null, text: string,
-    client: Client, conversation: Conversation, ctx: FlowContext,
+    client: Client, conversation: Conversation, ctx: FlowContext, message: Message,
   ): Promise<void> {
     const choice = this.resolveChoice(clickedId, text, ctx);
 
@@ -756,6 +762,11 @@ export class ConversationService {
         { id: 'type_house',      title: 'بيت أو فيلا', keywords: ['بيت', 'دار', 'منزل', 'فيلا', 'قصر'] },
         { id: 'type_land',       title: 'أرض',        keywords: ['ارض', 'اراضي', 'قطعه'] },
       ]);
+      return;
+    }
+
+    if (choice === 'cat_rest_house') {
+      await this.startSearch(client, conversation, { ...ctx, property_type: 'rest_house' }, message);
       return;
     }
 
@@ -1294,7 +1305,7 @@ export class ConversationService {
     const BTN: Record<string, string> = {
       intent_rent: 'أبحث عن إيجار', intent_buy: 'أبحث عن شراء', intent_invest: 'أبحث عن استثمار',
       intent_sell: 'أبيع عقاري', intent_manage: 'أعرض عقاري لإدارة الأملاك', intent_complaint: 'تقديم شكوى',
-      cat_residential: 'عقار سكني', cat_commercial: 'عقار تجاري',
+      cat_residential: 'عقار سكني', cat_commercial: 'عقار تجاري', cat_rest_house: 'استراحة',
       type_apt_family: 'شقة عوائل', type_apt_single: 'شقة عزاب',
       type_house: 'بيت أو فيلا', type_land: 'أرض',
       entry_private: 'مدخل خاص', entry_shared: 'مدخل مشترك',
@@ -1550,7 +1561,7 @@ export class ConversationService {
   private buildComparisonMessage(pairs: { n: number; p: any }[]): string {
     const typeAr: Record<string, string> = {
       land: 'أرض', apartment: 'شقة', villa: 'فيلا', building: 'عمارة', office: 'مكتب',
-      showroom: 'معرض', warehouse: 'مستودع', farm: 'مزرعة', investment_project: 'مشروع استثماري', other: 'عقار',
+      showroom: 'معرض', warehouse: 'مستودع', farm: 'مزرعة', rest_house: 'استراحة', investment_project: 'مشروع استثماري', other: 'عقار',
     };
     const fields: [string, (p: any) => string][] = [
       ['النوع', (p) => typeAr[p.property_type] ?? 'عقار'],

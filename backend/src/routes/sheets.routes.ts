@@ -142,7 +142,9 @@ router.post('/upload-excel', upload.single('file'), async (req: Request, res: Re
         'مكتب': 'office', 'office': 'office',
         'محل': 'showroom', 'صالة': 'showroom', 'صالة تجارية': 'showroom', 'showroom': 'showroom',
         'مستودع': 'warehouse', 'warehouse': 'warehouse',
-        'مزرعة': 'farm', 'استراحة': 'farm', 'farm': 'farm',
+        'مزرعة': 'farm', 'farm': 'farm',
+        'استراحة': 'rest_house', 'استراحه': 'rest_house', 'استراحات': 'rest_house',
+        'شاليه': 'rest_house', 'rest_house': 'rest_house',
         'other': 'other',
       };
 
