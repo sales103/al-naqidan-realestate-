@@ -11,7 +11,7 @@ import { useAuthStore } from '../store/auth.store.ts';
 const actionConfig: Record<string, { label: string; bg: string; color: string; borderColor: string }> = {
   'user.create':           { label: 'إنشاء موظف',           bg: 'rgba(5,150,105,0.08)',   color: '#059669', borderColor: 'rgba(5,150,105,0.18)' },
   'user.update':           { label: 'تعديل موظف',           bg: 'rgba(59,91,219,0.08)',   color: '#3B5BDB', borderColor: 'rgba(59,91,219,0.18)' },
-  'user.delete':           { label: 'تعطيل موظف',           bg: 'rgba(239,68,68,0.08)',   color: '#DC2626', borderColor: 'rgba(239,68,68,0.2)' },
+  'user.delete':           { label: 'حذف موظف',             bg: 'rgba(239,68,68,0.08)',   color: '#DC2626', borderColor: 'rgba(239,68,68,0.2)' },
   'user.invite_resend':    { label: 'إعادة إرسال دعوة',     bg: 'rgba(245,158,11,0.08)',  color: '#D97706', borderColor: 'rgba(245,158,11,0.18)' },
   'auth.login':            { label: 'تسجيل دخول',           bg: 'rgba(100,116,139,0.08)', color: '#64748B', borderColor: 'rgba(100,116,139,0.15)' },
   'auth.password_change':  { label: 'تغيير كلمة مرور',      bg: 'rgba(124,58,237,0.08)',  color: '#7C3AED', borderColor: 'rgba(124,58,237,0.2)' },

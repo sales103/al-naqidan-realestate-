@@ -61,23 +61,39 @@ router.post('/', authorize('super_admin', 'admin'), async (req: Request, res: Re
       is_active: false,
     }).returning(['id','full_name','full_name_ar','email','role','whatsapp_instance','is_active','created_at']);
 
-    // Send invite email
+    // Send invite email. Resend's free tier only delivers to the account
+    // owner's own address until a domain is verified, so delivery to an
+    // employee can legitimately fail — surface that instead of hiding it, and
+    // always return the link so the admin can share it manually (WhatsApp…).
     const companyName = await getCompanyName();
     const frontendUrl = config.frontendUrl || 'https://al-naqidan-realestate.vercel.app';
     const link = `${frontendUrl}/set-password?token=${token}`;
+    let emailSent = false;
+    let emailError: string | undefined;
     try {
       await sendMail(
         String(email).trim().toLowerCase(),
         `تفعيل حسابك - ${companyName}`,
         buildInviteEmail(companyName, full_name_ar ?? full_name, link),
       );
-    } catch (err) {
+      emailSent = true;
+    } catch (err: any) {
+      emailError = err?.message ?? 'فشل إرسال البريد';
       logger.error('Failed to send invite email', { error: err });
     }
 
-    logger.info('User created with invite', { userId: user.id, email });
+    logger.info('User created with invite', { userId: user.id, email, emailSent });
     await audit({ req, action: 'user.create', entityType: 'user', entityId: user.id, details: { email: user.email, role: user.role } });
-    res.status(201).json({ success: true, data: user, message: 'تم إنشاء المستخدم وإرسال رابط تعيين كلمة المرور إلى بريده' });
+    res.status(201).json({
+      success: true,
+      data: user,
+      invite_link: link,
+      email_sent: emailSent,
+      email_error: emailError,
+      message: emailSent
+        ? 'تم إنشاء المستخدم وإرسال رابط التفعيل إلى بريده'
+        : 'تم إنشاء المستخدم لكن تعذّر إرسال البريد — انسخ رابط التفعيل وأرسله للموظف',
+    });
   } catch (error) { next(error); }
 });
 
@@ -98,14 +114,30 @@ router.post('/:id/resend-invite', authorize('super_admin', 'admin'), async (req:
     const companyName = await getCompanyName();
     const frontendUrl = config.frontendUrl || 'https://al-naqidan-realestate.vercel.app';
     const link = `${frontendUrl}/set-password?token=${token}`;
-    await sendMail(
-      user.email,
-      `تفعيل حسابك - ${companyName}`,
-      buildInviteEmail(companyName, user.full_name_ar ?? user.full_name, link),
-    );
+    let emailSent = false;
+    let emailError: string | undefined;
+    try {
+      await sendMail(
+        user.email,
+        `تفعيل حسابك - ${companyName}`,
+        buildInviteEmail(companyName, user.full_name_ar ?? user.full_name, link),
+      );
+      emailSent = true;
+    } catch (err: any) {
+      emailError = err?.message ?? 'فشل إرسال البريد';
+      logger.error('Failed to resend invite email', { error: err });
+    }
 
     await audit({ req, action: 'user.invite_resend', entityType: 'user', entityId: user.id, details: { email: user.email } });
-    res.json({ success: true, message: 'تم إعادة إرسال رابط الدعوة' });
+    res.json({
+      success: true,
+      invite_link: link,
+      email_sent: emailSent,
+      email_error: emailError,
+      message: emailSent
+        ? 'تم إعادة إرسال رابط التفعيل إلى بريد الموظف'
+        : 'تعذّر إرسال البريد — انسخ رابط التفعيل وأرسله للموظف',
+    });
   } catch (error) { next(error); }
 });
 
@@ -178,7 +210,7 @@ router.put('/:id', authorize('super_admin', 'admin'), async (req: Request, res: 
   } catch (error) { next(error); }
 });
 
-// DELETE /api/users/:id — deactivate user
+// DELETE /api/users/:id — permanently remove user
 router.delete('/:id', authorize('super_admin', 'admin'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
@@ -189,23 +221,32 @@ router.delete('/:id', authorize('super_admin', 'admin'), async (req: Request, re
     const target = await db('users').where('id', id).first();
     if (!target) { res.status(404).json({ success: false, error: 'المستخدم غير موجود' }); return; }
     if (target.role === 'super_admin' && reqUser.role !== 'super_admin') {
-      res.status(403).json({ success: false, error: 'لا تملك صلاحية تعطيل حساب سوبر ادمن' });
+      res.status(403).json({ success: false, error: 'لا تملك صلاحية حذف حساب سوبر ادمن' });
       return;
     }
+    // Never allow the last active super_admin to be removed — it would lock
+    // everyone out of the admin surface permanently.
     if (target.role === 'super_admin') {
       const [{ count }] = await db('users')
         .where({ role: 'super_admin', is_active: true })
         .whereNot('id', id)
         .count('id as count') as any[];
       if (Number(count) === 0) {
-        res.status(400).json({ success: false, error: 'لا يمكن تعطيل آخر حساب سوبر ادمن في النظام' });
+        res.status(400).json({ success: false, error: 'لا يمكن حذف آخر حساب سوبر ادمن في النظام' });
         return;
       }
     }
 
-    await db('users').where('id', id).update({ is_active: false, updated_at: new Date() });
+    // Best-effort: detach the user's id from history rows so the delete never
+    // trips an unexpected reference and the records survive as unattributed.
+    // No DB-level FKs exist, so these are cosmetic cleanups, not requirements.
+    for (const [table, col] of [['messages', 'sent_by'], ['system_settings', 'updated_by']] as const) {
+      try { await db(table).where(col, id).update({ [col]: null }); } catch { /* column may not exist */ }
+    }
+
+    await db('users').where('id', id).del();
     await audit({ req, action: 'user.delete', entityType: 'user', entityId: String(id), details: { email: target.email, role: target.role } });
-    res.json({ success: true, message: 'تم تعطيل المستخدم' });
+    res.json({ success: true, message: 'تم حذف المستخدم نهائياً' });
   } catch (error) { next(error); }
 });
 

@@ -66,6 +66,7 @@ export default function UsersPage() {
   const [editing, setEditing] = useState<any>(null);
   const [form, setForm] = useState({ ...emptyForm });
   const [confirmDelete, setConfirmDelete] = useState<any>(null);
+  const [inviteInfo, setInviteInfo] = useState<{ link: string; emailSent: boolean; email: string } | null>(null);
   const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }));
 
   const { data: usersRes, isLoading } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.list() });
@@ -75,7 +76,14 @@ export default function UsersPage() {
 
   const createMut = useMutation({
     mutationFn: (d: any) => usersApi.create(d),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast.success('تم إنشاء المستخدم وإرسال رابط تعيين كلمة المرور إلى بريد الموظف'); closeModal(); },
+    onSuccess: (res: any) => {
+      qc.invalidateQueries({ queryKey: ['users'] });
+      const d = res?.data ?? {};
+      closeModal();
+      // Always surface the activation link so the admin can share it manually
+      // (Resend's free tier may reject delivery to a new employee's address).
+      setInviteInfo({ link: d.invite_link, emailSent: Boolean(d.email_sent), email: d.data?.email ?? '' });
+    },
     onError: (e: any) => toast.error(e?.response?.data?.error ?? 'حدث خطأ'),
   });
   const updateMut = useMutation({
@@ -85,12 +93,15 @@ export default function UsersPage() {
   });
   const deleteMut = useMutation({
     mutationFn: (id: string) => usersApi.remove(id),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast.success('تم تعطيل الحساب'); setConfirmDelete(null); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast.success('تم حذف الحساب نهائياً'); setConfirmDelete(null); },
     onError: (e: any) => toast.error(e?.response?.data?.error ?? 'حدث خطأ'),
   });
   const resendMut = useMutation({
     mutationFn: (id: string) => usersApi.resendInvite(id),
-    onSuccess: () => toast.success('تم إعادة إرسال رابط الدعوة'),
+    onSuccess: (res: any) => {
+      const d = res?.data ?? {};
+      setInviteInfo({ link: d.invite_link, emailSent: Boolean(d.email_sent), email: '' });
+    },
     onError: (e: any) => toast.error(e?.response?.data?.error ?? 'حدث خطأ'),
   });
 
@@ -273,7 +284,7 @@ export default function UsersPage() {
                           {u.id !== me?.id && (
                             <button onClick={() => setConfirmDelete(u)}
                               className="p-2 rounded-lg transition-all"
-                              title="تعطيل"
+                              title="حذف نهائي"
                               style={{ color: '#7A8FAA' }}
                               onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.07)'; (e.currentTarget as HTMLButtonElement).style.color = '#DC2626'; }}
                               onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = '#7A8FAA'; }}>
@@ -407,18 +418,18 @@ export default function UsersPage() {
         </div>
       )}
 
-      {/* ── Confirm Deactivate ────────────────────────────────────────────── */}
+      {/* ── Confirm Delete ────────────────────────────────────────────────── */}
       {confirmDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(6,12,24,0.65)', backdropFilter: 'blur(6px)' }}>
           <div className="w-full max-w-sm fade-in text-center p-8" style={{ background: '#fff', borderRadius: '20px', boxShadow: '0 24px 64px rgba(6,12,24,0.25)' }}>
             <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-5" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.15)' }}>
-              <XCircleIcon className="w-7 h-7" style={{ color: '#DC2626' }} />
+              <TrashIcon className="w-7 h-7" style={{ color: '#DC2626' }} />
             </div>
-            <h3 className="font-bold text-lg mb-2" style={{ color: '#0F1C35' }}>تعطيل الحساب؟</h3>
+            <h3 className="font-bold text-lg mb-2" style={{ color: '#0F1C35' }}>حذف الحساب نهائياً؟</h3>
             <p className="text-sm mb-1" style={{ color: '#5A6882' }}>
-              سيتم تعطيل حساب <strong style={{ color: '#0F1C35' }}>{confirmDelete.full_name_ar || confirmDelete.full_name}</strong>
+              سيتم حذف حساب <strong style={{ color: '#0F1C35' }}>{confirmDelete.full_name_ar || confirmDelete.full_name}</strong> بشكل نهائي
             </p>
-            <p className="text-xs mb-7" style={{ color: '#94A3B8' }}>لن يتمكن من تسجيل الدخول حتى يتم تفعيل حسابه مجدداً</p>
+            <p className="text-xs mb-7" style={{ color: '#94A3B8' }}>لا يمكن التراجع عن هذا الإجراء</p>
             <div className="flex gap-3 justify-center">
               <button onClick={() => setConfirmDelete(null)}
                 className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all"
@@ -431,9 +442,50 @@ export default function UsersPage() {
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-60"
                 style={{ background: 'linear-gradient(135deg, #DC2626, #EF4444)', boxShadow: '0 2px 8px rgba(239,68,68,0.3)' }}>
                 {deleteMut.isPending && <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>}
-                تعطيل الحساب
+                حذف نهائياً
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Invite Link (activation) ──────────────────────────────────────── */}
+      {inviteInfo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(6,12,24,0.65)', backdropFilter: 'blur(6px)' }}>
+          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto fade-in p-7" style={{ background: '#fff', borderRadius: '20px', boxShadow: '0 24px 64px rgba(6,12,24,0.25)' }}>
+            <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4"
+              style={{ background: inviteInfo.emailSent ? 'rgba(5,150,105,0.08)' : 'rgba(245,158,11,0.1)', border: `1px solid ${inviteInfo.emailSent ? 'rgba(5,150,105,0.15)' : 'rgba(245,158,11,0.2)'}` }}>
+              <EnvelopeIcon className="w-7 h-7" style={{ color: inviteInfo.emailSent ? '#059669' : '#D97706' }} />
+            </div>
+            <h3 className="font-bold text-lg text-center mb-2" style={{ color: '#0F1C35' }}>
+              {inviteInfo.emailSent ? 'تم إرسال رابط التفعيل ✓' : 'رابط تفعيل الحساب'}
+            </h3>
+            <p className="text-sm text-center mb-5" style={{ color: '#5A6882' }}>
+              {inviteInfo.emailSent
+                ? `أُرسل الرابط إلى بريد الموظف${inviteInfo.email ? ` (${inviteInfo.email})` : ''}. يمكنك أيضاً نسخه وإرساله عبر واتساب.`
+                : 'تعذّر إرسال البريد تلقائياً. انسخ الرابط أدناه وأرسله للموظف عبر واتساب أو أي وسيلة — صالح لمدة 7 أيام.'}
+            </p>
+            <div className="flex items-center gap-2 p-3 rounded-xl mb-4" style={{ background: 'rgba(242,246,255,0.8)', border: '1px solid rgba(59,91,219,0.12)' }}>
+              <input readOnly value={inviteInfo.link ?? ''} dir="ltr"
+                className="flex-1 bg-transparent text-xs font-mono outline-none" style={{ color: '#3B5BDB' }}
+                onFocus={e => e.currentTarget.select()} />
+              <button onClick={() => {
+                if (inviteInfo.link) {
+                  navigator.clipboard?.writeText(inviteInfo.link)
+                    .then(() => toast.success('تم نسخ الرابط'))
+                    .catch(() => toast.error('تعذّر النسخ — حدده يدوياً'));
+                }
+              }}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold text-white flex-shrink-0"
+                style={{ background: 'linear-gradient(135deg, #3B5BDB, #5273F5)' }}>
+                نسخ
+              </button>
+            </div>
+            <button onClick={() => setInviteInfo(null)}
+              className="w-full py-2.5 rounded-xl text-sm font-bold transition-all"
+              style={{ background: 'rgba(59,91,219,0.08)', color: '#3B5BDB' }}>
+              تم
+            </button>
           </div>
         </div>
       )}
