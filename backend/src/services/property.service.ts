@@ -207,9 +207,25 @@ export class PropertyService {
     return `AQ-${Date.now()}`;
   }
 
+  // The live table still carries a legacy `type` column beside the
+  // `property_type` this code reads and writes. It is NOT NULL with no default
+  // and nothing ever filled it, so every insert from the dashboard died on a
+  // not-null violation. Mirror the value into it whenever the column is
+  // present, keeping the two in agreement for anything still reading `type`.
+  private mirrorLegacyType(payload: Record<string, any>, cols: Set<string>): void {
+    if (!cols.has('type')) return;
+    const propertyType = payload['property_type'];
+    if (propertyType != null && payload['type'] == null) payload['type'] = propertyType;
+  }
+
   async create(data: Omit<Property, 'id' | 'code' | 'created_at' | 'updated_at' | 'view_count' | 'inquiry_count'>): Promise<Property> {
+    const cols = await this.existingColumns();
     const payload = await this.filterToExistingColumns(this.stringifyJsonbArrays(data)) as Record<string, any>;
     if (!payload['code']) payload['code'] = await this.generateUniqueCode();
+    this.mirrorLegacyType(payload, cols);
+    // Last resort: the column is required, so it must never go out empty even
+    // if the caller somehow omitted the type entirely.
+    if (cols.has('type') && payload['type'] == null) payload['type'] = 'other';
     const [property] = await this.db('properties').insert(payload).returning('*') as Property[];
     if (!property) throw new Error('Failed to create property');
     await cacheDel(cacheKeys.dashboardStats());
@@ -217,7 +233,11 @@ export class PropertyService {
   }
 
   async update(id: string, data: Partial<Property>): Promise<Property> {
-    const payload = await this.filterToExistingColumns(this.stringifyJsonbArrays({ ...data, updated_at: new Date() }));
+    const cols = await this.existingColumns();
+    const payload = await this.filterToExistingColumns(
+      this.stringifyJsonbArrays({ ...data, updated_at: new Date() })
+    ) as Record<string, any>;
+    this.mirrorLegacyType(payload, cols);
     const [property] = await this.db('properties')
       .where('id', id)
       .update(payload)
