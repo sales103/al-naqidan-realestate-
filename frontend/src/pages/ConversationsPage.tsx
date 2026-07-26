@@ -5,6 +5,7 @@ import {
   MagnifyingGlassIcon, UserIcon, BoltIcon,
   XMarkIcon, TrashIcon, ArrowRightIcon,
   ExclamationTriangleIcon, MagnifyingGlassCircleIcon, CheckCircleIcon,
+  DocumentIcon, MapPinIcon, ArrowDownTrayIcon,
 } from '@heroicons/react/24/outline';
 import { CpuChipIcon as CpuSolid } from '@heroicons/react/24/solid';
 import { conversationsApi, clientsApi } from '../services/api.ts';
@@ -170,6 +171,86 @@ function ConvItem({ conv, isSelected, onClick }: { conv: any; isSelected: boolea
 }
 
 /* ── Message Bubble ──────────────────────────────────────────────────────── */
+/** Images/video/audio/documents/location used to render as a bare
+ *  "[image]" / "[audio]" placeholder — the staff member had no way to see
+ *  what the customer actually sent, so replying to it meant guessing. Each
+ *  type now renders its real content; text stays exactly as before. */
+function MessageContent({ msg, isOut }: { msg: any; isOut: boolean }) {
+  const [mediaFailed, setMediaFailed] = useState(false);
+  const linkColor = isOut ? 'rgba(255,255,255,0.95)' : '#3B5BDB';
+  const captionText = msg.caption || msg.content;
+
+  if ((msg.message_type === 'image' || msg.message_type === 'sticker') && msg.media_url) {
+    return (
+      <div>
+        {!mediaFailed ? (
+          <a href={msg.media_url} target="_blank" rel="noreferrer">
+            <img src={msg.media_url} alt="صورة مرسلة" onError={() => setMediaFailed(true)}
+              className="rounded-xl block" style={{ maxWidth: '220px', maxHeight: '260px', objectFit: 'cover' }} />
+          </a>
+        ) : (
+          <span className="text-xs opacity-80">تعذّر تحميل الصورة — قد يكون الرابط منتهياً</span>
+        )}
+        {captionText && <p className="mt-1.5 whitespace-pre-wrap">{captionText}</p>}
+      </div>
+    );
+  }
+
+  if (msg.message_type === 'video' && msg.media_url) {
+    return (
+      <div>
+        {!mediaFailed ? (
+          <video src={msg.media_url} controls onError={() => setMediaFailed(true)}
+            className="rounded-xl block" style={{ maxWidth: '240px', maxHeight: '260px' }} />
+        ) : (
+          <span className="text-xs opacity-80">تعذّر تحميل الفيديو — قد يكون الرابط منتهياً</span>
+        )}
+        {captionText && <p className="mt-1.5 whitespace-pre-wrap">{captionText}</p>}
+      </div>
+    );
+  }
+
+  if (msg.message_type === 'audio') {
+    return (
+      <div style={{ minWidth: '220px' }}>
+        {msg.media_url && !mediaFailed ? (
+          <audio src={msg.media_url} controls onError={() => setMediaFailed(true)} className="w-full" style={{ height: '36px' }} />
+        ) : (
+          <span className="text-xs opacity-80">تعذّر تحميل الرسالة الصوتية</span>
+        )}
+        {/* The transcription (see conversation.service.ts) lets staff read what
+            was said without needing to play the clip at all. */}
+        {msg.transcription && (
+          <p className="mt-1.5 text-xs italic opacity-90">"{msg.transcription}"</p>
+        )}
+      </div>
+    );
+  }
+
+  if (msg.message_type === 'document') {
+    return (
+      <a href={msg.media_url} target="_blank" rel="noreferrer"
+        className="flex items-center gap-2 font-semibold" style={{ color: linkColor }}>
+        <DocumentIcon className="w-5 h-5 flex-shrink-0" />
+        <span className="underline">{captionText || 'فتح المستند'}</span>
+        <ArrowDownTrayIcon className="w-4 h-4 flex-shrink-0 opacity-70" />
+      </a>
+    );
+  }
+
+  if (msg.message_type === 'location' && msg.location_lat && msg.location_lng) {
+    return (
+      <a href={`https://maps.google.com/?q=${msg.location_lat},${msg.location_lng}`} target="_blank" rel="noreferrer"
+        className="flex items-center gap-2 font-semibold" style={{ color: linkColor }}>
+        <MapPinIcon className="w-5 h-5 flex-shrink-0" />
+        <span className="underline">{msg.location_name || 'عرض الموقع على الخريطة'}</span>
+      </a>
+    );
+  }
+
+  return <>{msg.content || (msg.message_type && msg.message_type !== 'text' ? `[${msg.message_type}] — بلا محتوى` : '')}</>;
+}
+
 function MessageBubble({ msg }: { msg: any }) {
   const isOut = msg.direction === 'outbound';
   const isAI  = msg.is_from_ai;
@@ -191,7 +272,7 @@ function MessageBubble({ msg }: { msg: any }) {
             boxShadow: isOut ? '0 2px 8px rgba(59,91,219,0.25)' : '0 1px 4px rgba(6,12,24,0.08)',
             border: isOut ? 'none' : '1px solid rgba(59,91,219,0.08)',
           }}>
-          {msg.content ?? `[${msg.message_type ?? 'رسالة'}]`}
+          <MessageContent msg={msg} isOut={isOut} />
         </div>
         <span className="text-[10px] mt-1 px-1" style={{ color: '#94A3B8' }}>
           {format(new Date(msg.created_at), 'HH:mm')}
