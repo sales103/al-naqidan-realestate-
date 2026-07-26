@@ -304,6 +304,9 @@ export default function ConversationsPage() {
   const me = useAuthStore((s) => s.user);
   const isManager = MANAGER_ROLES.includes(me?.role ?? '');
   const bottomRef   = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const prevMsgCountRef = useRef(0);
+  const prevConvIdRef   = useRef<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const qc = useQueryClient();
 
@@ -375,7 +378,6 @@ export default function ConversationsPage() {
     onError: () => toast.error('تعذّر تحديث الحالة'),
   });
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgsRes]);
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -385,6 +387,31 @@ export default function ConversationsPage() {
 
   const allConvs: any[] = (convsRes as any)?.data?.data ?? [];
   const messages: any[] = (msgsRes as any)?.data?.data  ?? [];
+
+  // Messages poll every 4s, and axios hands back a brand-new response object
+  // on every fetch even when nothing changed — scrolling to the bottom on
+  // every single poll (the old behaviour) fought anyone trying to scroll up
+  // and read older messages, snapping them back down mid-read. Now it only
+  // follows the conversation down when the message count actually changed
+  // (or the conversation was just opened), and even then only if the reader
+  // was already near the bottom — someone scrolled up on purpose is left alone.
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    const convChanged = prevConvIdRef.current !== (selectedConv?.id ?? null);
+    const countChanged = messages.length !== prevMsgCountRef.current;
+    prevConvIdRef.current = selectedConv?.id ?? null;
+    prevMsgCountRef.current = messages.length;
+
+    if (!container || (!convChanged && !countChanged)) return;
+
+    const nearBottom = convChanged
+      || (container.scrollHeight - container.scrollTop - container.clientHeight < 150);
+    if (nearBottom) {
+      requestAnimationFrame(() => {
+        bottomRef.current?.scrollIntoView({ behavior: convChanged ? 'auto' : 'smooth' });
+      });
+    }
+  }, [messages.length, selectedConv?.id]);
 
   const needsFollowup = (c: any) => Boolean(c.ai_handoff_requested) && c.handoff_reason !== 'no_match';
   const isNoMatchReq  = (c: any) => Boolean(c.ai_handoff_requested) && c.handoff_reason === 'no_match';
@@ -662,7 +689,7 @@ export default function ConversationsPage() {
                 )}
 
                 {/* Messages */}
-                <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 space-y-3">
+                <div ref={messagesContainerRef} className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 space-y-3">
                   {messages.length === 0 ? (
                     <div className="text-center py-16">
                       <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ background: 'rgba(59,91,219,0.07)' }}>
