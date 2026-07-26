@@ -47,6 +47,12 @@ router.get('/', async (req, res, next) => {
     const { instance, blocked } = scope(req);
     if (blocked) { res.json({ success: true, data: [] }); return; }
 
+    // 'followup' = needs a person for any reason except missing inventory;
+    // 'no_match' = the office genuinely doesn't have what the customer asked
+    // for — a sourcing gap, not a "reply to them" task. Kept as two separate
+    // filters so each shows up as its own clear queue in the dashboard.
+    const handoff = (req.query['handoff'] as string | undefined)?.trim();
+
     const convs = await db('conversations as cv')
       .join('clients as cl', 'cv.client_id', 'cl.id')
       .joinRaw(`
@@ -59,6 +65,10 @@ router.get('/', async (req, res, next) => {
         ) m ON TRUE
       `)
       .modify((q) => { if (instance) q.where('cv.wa_instance', instance); })
+      .modify((q) => {
+        if (handoff === 'no_match') q.where('cv.ai_handoff_requested', true).where('cv.handoff_reason', 'no_match');
+        else if (handoff === 'followup') q.where('cv.ai_handoff_requested', true).whereNot('cv.handoff_reason', 'no_match');
+      })
       .select('cv.*', 'cl.full_name', 'cl.phone', 'm.content as last_message', 'm.message_type as last_message_type', 'm.created_at as last_message_at')
       .orderBy('cv.last_message_at', 'desc')
       .limit(Number(limit))
@@ -95,6 +105,7 @@ router.post('/:id/send', async (req, res, next) => {
       await db('conversations').where('id', req.params['id']).update({
         is_ai_enabled: false,
         ai_handoff_requested: false,
+        handoff_reason: null,
         updated_at: new Date(),
       });
       res.json({ success: true, data: { is_ai_enabled: false, command: 'takeover' } });
@@ -156,8 +167,26 @@ router.patch('/:id/toggle-ai', async (req, res, next) => {
     await db('conversations').where('id', req.params['id']).update({
       is_ai_enabled: !conv.is_ai_enabled,
       ai_handoff_requested: false,
+      handoff_reason: null,
     });
     res.json({ success: true, data: { is_ai_enabled: !conv.is_ai_enabled } });
+  } catch (error) { next(error); }
+});
+
+// Clears the handoff flag without touching who's replying (AI or staff) —
+// for when a staff member resolved it another way (a phone call, in person)
+// and just wants it off the follow-up / no-match queues.
+router.patch('/:id/resolve-handoff', async (req, res, next) => {
+  try {
+    const db = getDatabase();
+    const conv = await db('conversations').where('id', req.params['id']).first();
+    if (!conv) { res.status(404).json({ success: false, error: 'Not found' }); return; }
+    if (!canAccess(req, conv)) { res.status(403).json({ success: false, error: 'لا تملك صلاحية على هذه المحادثة' }); return; }
+    await db('conversations').where('id', req.params['id']).update({
+      ai_handoff_requested: false,
+      handoff_reason: null,
+    });
+    res.json({ success: true });
   } catch (error) { next(error); }
 });
 

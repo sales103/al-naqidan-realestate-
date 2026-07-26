@@ -114,6 +114,7 @@ export const conversationsApi = {
   send: (id: string, text: string) => api.post(`/conversations/${id}/send`, { text }),
   toggleAI: (id: string) => api.patch(`/conversations/${id}/toggle-ai`),
   markRead: (id: string) => api.patch(`/conversations/${id}/read`),
+  resolveHandoff: (id: string) => api.patch(`/conversations/${id}/resolve-handoff`),
   remove: (id: string) => api.delete(`/conversations/${id}`),
 };
 

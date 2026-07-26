@@ -167,6 +167,21 @@ const MIGRATIONS: { name: string; sql: string }[] = [
       END $$;
     `,
   },
+  {
+    // ai_handoff_requested has always been a single boolean covering every
+    // reason a conversation needed a human — a complaint, a booking that
+    // failed to auto-confirm, an owner listing a property, AND a customer
+    // asking for something with no matching inventory. The dashboard could
+    // only ever show one undifferentiated pile. This column splits it: the
+    // "needs a person" reasons stay one queue, and 'no_match' — a request
+    // the office genuinely doesn't have — becomes its own, since acting on
+    // it means sourcing inventory, not replying to the customer.
+    name: '011_conversation_handoff_reason',
+    sql: `
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS handoff_reason VARCHAR(32);
+      CREATE INDEX IF NOT EXISTS conversations_handoff_reason_idx ON conversations (handoff_reason) WHERE handoff_reason IS NOT NULL;
+    `,
+  },
 ];
 
 async function ensureMigrationsTable(): Promise<void> {

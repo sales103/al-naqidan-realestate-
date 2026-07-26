@@ -711,7 +711,7 @@ export class ConversationService {
 
     try {
       await this.db('conversations').where('id', conversation.id)
-        .update({ ai_handoff_requested: true, updated_at: new Date() });
+        .update({ ai_handoff_requested: true, handoff_reason: 'complaint', updated_at: new Date() });
       await this.notifyAgent(client, conversation, summary);
     } catch (e: any) {
       logger.error('complaint escalation failed', { clientId: client.id, error: e?.message });
@@ -980,7 +980,7 @@ export class ConversationService {
     // never fail silently — but it also must not block the customer's reply.
     try {
       await this.db('conversations').where('id', conversation.id)
-        .update({ ai_handoff_requested: true, updated_at: new Date() });
+        .update({ ai_handoff_requested: true, handoff_reason: 'complaint', updated_at: new Date() });
       await this.notifyAgent(client, conversation, summary);
       logger.info('complaint recorded', {
         clientId: client.id, level: signal.level, category: signal.category,
@@ -1027,7 +1027,7 @@ export class ConversationService {
     // customer asks next (state 'ai') rather than going silent.
     await this.saveFlowContext(conversation.id, { ...ctx, state: 'ai', deal_kind: undefined, pending: undefined });
     await this.db('conversations').where('id', conversation.id)
-      .update({ ai_handoff_requested: true, updated_at: new Date() })
+      .update({ ai_handoff_requested: true, handoff_reason: 'owner_listing', updated_at: new Date() })
       .catch(() => {});
     await this.notifyAgent(client, conversation, `${label}:\n${details}`);
 
@@ -1158,11 +1158,29 @@ export class ConversationService {
       if (allAlreadyShown) {
         responseText = `${responseText}\n\nهذي كل الخيارات المتوفرة حالياً وسبق أن أرسلتها لك، لا يوجد جديد غيرها حالياً.`;
       }
+
+      // The customer asked for something and the office genuinely doesn't
+      // have it on file — not "already sent everything" (allAlreadyShown),
+      // a real zero-inventory match. That's a sourcing gap, not a "reply to
+      // the customer" task, so it gets its own reason rather than folding
+      // into the general handoff pile. The bot keeps talking either way —
+      // an empty result is never a reason to go quiet.
+      if (aiResult.should_send_properties && properties.length === 0 && !allAlreadyShown && !aiResult.should_escalate) {
+        await this.db('conversations').where('id', conversation.id)
+          .update({ ai_handoff_requested: true, handoff_reason: 'no_match', updated_at: new Date() })
+          .catch(() => {});
+        await this.notifyAgent(client, conversation, `طلب غير متوفر: ${searchSummary || 'لا يوجد عقار مطابق'}`);
+      }
+
       // Tracks the flow state actually persisted, so the shown_property_ids
       // save below (which happens last) never clobbers an escalation.
       let currentState = ctx.state;
       if (aiResult.should_escalate) {
-        await this.db('conversations').where('id', conversation.id).update({ ai_handoff_requested: true, updated_at: new Date() });
+        const reason = aiResult.intent.primary === 'complaint' ? 'complaint'
+          : aiResult.intent.primary === 'human_agent_request' ? 'human_request'
+          : 'general';
+        await this.db('conversations').where('id', conversation.id)
+          .update({ ai_handoff_requested: true, handoff_reason: reason, updated_at: new Date() });
         await this.saveFlowContext(conversation.id, { ...ctx, state: 'escalated' });
         currentState = 'escalated';
         await this.notifyAgent(client, conversation, aiResult.escalation_reason);
@@ -1271,6 +1289,9 @@ export class ConversationService {
       await this.reply(client, conversation, withMenuHint('لم أجد حالياً عقاراً مطابقاً لطلبك تماماً.\n\nسجّلت طلبك وسيتواصل معك أحد مستشارينا بأقرب الخيارات المتاحة.\n\n' + this.handoffNote()));
       // Notify the team, but keep the bot listening: an empty result is not a
       // reason to go silent on the customer for the rest of the conversation.
+      await this.db('conversations').where('id', conversation.id)
+        .update({ ai_handoff_requested: true, handoff_reason: 'no_match', updated_at: new Date() })
+        .catch(() => {});
       await this.notifyAgent(client, conversation, 'لا توجد عقارات مطابقة — يحتاج متابعة بشرية');
     } catch (e: any) {
       recordError('searchWithoutAI', e);
@@ -1491,7 +1512,8 @@ export class ConversationService {
 
     if (choice === 'slot_other') {
       await this.saveFlowContext(conversation.id, { ...ctx, state: 'escalated', pending: undefined });
-      await this.db('conversations').where('id', conversation.id).update({ ai_handoff_requested: true, updated_at: new Date() });
+      await this.db('conversations').where('id', conversation.id)
+        .update({ ai_handoff_requested: true, handoff_reason: 'booking_manual', updated_at: new Date() });
       await this.reply(client, conversation, 'تمام، دوّن الوقت اللي يناسبك وبيتواصل معك أحد مستشارينا لتثبيت الموعد مباشرة.');
       await this.notifyAgent(client, conversation, `العميل يطلب موعد معاينة بوقت مخصص: "${text}"`);
       return;
@@ -1522,6 +1544,9 @@ export class ConversationService {
     } catch (e: any) {
       logger.error('appointment booking failed', { clientId: client.id, error: e?.message });
       await this.reply(client, conversation, 'صار خطأ تقني وأنا أحاول أثبت الموعد، وبيتواصل معك أحد مستشارينا لتأكيده يدوياً.');
+      await this.db('conversations').where('id', conversation.id)
+        .update({ ai_handoff_requested: true, handoff_reason: 'booking_manual', updated_at: new Date() })
+        .catch(() => {});
       await this.notifyAgent(client, conversation, 'فشل حجز موعد معاينة آلياً — يحتاج تثبيت يدوي');
       await this.saveFlowContext(conversation.id, { ...ctx, state: 'ai', booking: undefined, pending: undefined });
     }
