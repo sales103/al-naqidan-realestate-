@@ -61,7 +61,9 @@ export const propertiesApi = {
   remove: (id: string) => api.delete(`/properties/${id}`),
   stats: () => api.get('/properties/stats'),
   cities: () => api.get('/properties/cities'),
+  createCity: (name_ar: string) => api.post('/properties/cities', { name_ar }),
   districts: (cityId: number) => api.get(`/properties/cities/${cityId}/districts`),
+  createDistrict: (cityId: number, name_ar: string) => api.post(`/properties/cities/${cityId}/districts`, { name_ar }),
 };
 
 // ─── Uploads ─────────────────────────────────────────────────────────────────

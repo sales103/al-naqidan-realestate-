@@ -201,3 +201,27 @@ export const getDistricts = async (req: Request, res: Response, next: NextFuncti
     res.json({ success: true, data: districts });
   } catch (error) { next(error); }
 };
+
+// There was never a way to add a city or district from the dashboard — the
+// "الحي" selector on the property form had nothing to offer, which is why
+// every listing before this had its district typed into a free-text address
+// instead of properly linked. These let staff create one on the spot.
+export const createCity = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { name_ar, name_en } = z.object({
+      name_ar: z.string().min(1),
+      name_en: z.string().optional(),
+    }).parse(req.body);
+    const city = await propertyService.createCity(name_ar, name_en);
+    res.status(201).json({ success: true, data: city });
+  } catch (error) { next(error); }
+};
+
+export const createDistrict = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const cityId = parseInt(req.params['cityId']!);
+    const { name_ar } = z.object({ name_ar: z.string().min(1) }).parse(req.body);
+    const district = await propertyService.createDistrict(cityId, name_ar);
+    res.status(201).json({ success: true, data: district });
+  } catch (error) { next(error); }
+};

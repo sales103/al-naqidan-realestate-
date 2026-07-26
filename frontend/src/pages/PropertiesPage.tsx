@@ -75,12 +75,30 @@ function PropertyModal({ property, onClose }: { property?: any; onClose: () => v
   // auto-select it once it loads and let the admin choose the district. This
   // is what the bot actually filters on: a listing whose district was only
   // ever typed into the free-text address never matched a district search.
-  const { data: citiesRes } = useQuery({ queryKey: ['cities'], queryFn: propertiesApi.cities });
+  const { data: citiesRes, isLoading: citiesLoading } = useQuery({ queryKey: ['cities'], queryFn: propertiesApi.cities });
   const cities: any[] = (citiesRes as any)?.data?.data ?? [];
   const cityId = form.city_id || cities[0]?.id || '';
   useEffect(() => {
     if (!form.city_id && cities[0]?.id) set('city_id', cities[0].id);
   }, [cities.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Nothing to pick from at all yet (fresh install, or the city was never
+  // created) — create the one city this office operates in automatically
+  // instead of sending the admin off to a separate "manage cities" screen
+  // that doesn't exist.
+  const createCityMut = useMutation({
+    mutationFn: () => propertiesApi.createCity('بريدة'),
+    onSuccess: (res: any) => {
+      qc.invalidateQueries({ queryKey: ['cities'] });
+      const id = res?.data?.data?.id;
+      if (id) set('city_id', id);
+    },
+  });
+  useEffect(() => {
+    if (!citiesLoading && cities.length === 0 && !createCityMut.isPending && !createCityMut.isSuccess) {
+      createCityMut.mutate();
+    }
+  }, [citiesLoading, cities.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { data: districtsRes } = useQuery({
     queryKey: ['districts', cityId],
@@ -88,6 +106,24 @@ function PropertyModal({ property, onClose }: { property?: any; onClose: () => v
     enabled: Boolean(cityId),
   });
   const districts: any[] = (districtsRes as any)?.data?.data ?? [];
+
+  const [newDistrict, setNewDistrict] = useState('');
+  const createDistrictMut = useMutation({
+    mutationFn: (name: string) => propertiesApi.createDistrict(Number(cityId), name),
+    onSuccess: (res: any) => {
+      qc.invalidateQueries({ queryKey: ['districts', cityId] });
+      const id = res?.data?.data?.id;
+      if (id) set('district_id', id);
+      setNewDistrict('');
+      toast.success('تم إضافة الحي');
+    },
+    onError: () => toast.error('تعذّر إضافة الحي'),
+  });
+  const addDistrict = () => {
+    const name = newDistrict.trim();
+    if (!name || !cityId) return;
+    createDistrictMut.mutate(name);
+  };
 
   const addFeature = () => {
     const f = newFeature.trim();
@@ -388,6 +424,19 @@ function PropertyModal({ property, onClose }: { property?: any; onClose: () => v
                 <option value="">— اختر الحي —</option>
                 {districts.map((d: any) => <option key={d.id} value={d.id}>{d.name_ar}</option>)}
               </select>
+              {/* Not in the list yet? Add it here instead of leaving the
+                  district blank and relying on the address text alone. */}
+              <div className="flex gap-2 mt-2">
+                <input className="input flex-1 text-sm" value={newDistrict}
+                  onChange={(e) => setNewDistrict(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addDistrict(); } }}
+                  placeholder="حي غير موجود؟ اكتب اسمه هنا..." disabled={!cityId} />
+                <button type="button" onClick={addDistrict}
+                  disabled={!newDistrict.trim() || !cityId || createDistrictMut.isPending}
+                  className="btn-secondary px-4 text-sm whitespace-nowrap disabled:opacity-50">
+                  {createDistrictMut.isPending ? 'جارٍ الإضافة...' : '+ إضافة حي'}
+                </button>
+              </div>
             </div>
 
             <div>

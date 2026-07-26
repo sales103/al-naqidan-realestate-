@@ -325,6 +325,25 @@ export class PropertyService {
     return this.db('districts').where({ city_id: cityId, is_active: true }).orderBy('name_ar');
   }
 
+  async createCity(nameAr: string, nameEn?: string): Promise<{ id: number; name_ar: string; name_en: string }> {
+    const existing = await this.db('cities').whereRaw('name_ar = ?', [nameAr]).first();
+    if (existing) return existing;
+    const [city] = await this.db('cities')
+      .insert({ name_ar: nameAr, name_en: nameEn || nameAr, is_active: true })
+      .returning('*');
+    await cacheDel(cacheKeys.cityList());
+    return city;
+  }
+
+  async createDistrict(cityId: number, nameAr: string): Promise<{ id: number; name_ar: string; city_id: number }> {
+    const existing = await this.db('districts').where({ city_id: cityId }).whereRaw('name_ar = ?', [nameAr]).first();
+    if (existing) return existing;
+    const [district] = await this.db('districts')
+      .insert({ city_id: cityId, name_ar: nameAr, is_active: true })
+      .returning('*');
+    return district;
+  }
+
   async resolveCityId(cityName: string): Promise<number | undefined> {
     const city = await this.db('cities')
       .where('is_active', true)
