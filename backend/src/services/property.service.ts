@@ -62,7 +62,19 @@ export class PropertyService {
 
     if (params.property_type) query.where('p.property_type', params.property_type);
     if (params.city_ids?.length) query.whereIn('p.city_id', params.city_ids);
-    if (params.district_ids?.length) query.whereIn('p.district_id', params.district_ids);
+
+    // A property added by hand from the dashboard has no district selector —
+    // only a free-text address — so district_id is often null even when the
+    // district is right there in the address. Matching district_id ALONE
+    // meant a customer asking for "الريان" got nothing back from a listing
+    // that plainly says "حي الريان" in its address. Match either: the proper
+    // link when it exists, or the district name inside the address text.
+    if (params.district_ids?.length || params.district_text) {
+      query.where((b) => {
+        if (params.district_ids?.length) b.orWhereIn('p.district_id', params.district_ids!);
+        if (params.district_text) b.orWhereRaw('p.address ILIKE ?', [`%${params.district_text}%`]);
+      });
+    }
     if (params.purpose) query.where('p.purpose', params.purpose);
     if (params.price_min !== undefined) query.where('p.price', '>=', params.price_min);
     if (params.price_max !== undefined) query.where('p.price', '<=', params.price_max);

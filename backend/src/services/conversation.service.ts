@@ -1459,6 +1459,10 @@ export class ConversationService {
     if (district) {
       const distId = await propertyService.resolveDistrictId(district);
       if (distId) enriched.district_ids = [distId];
+      // Always keep the raw text too — search() ORs it against the address,
+      // which is what actually catches a listing whose district was typed
+      // into the address field instead of linked properly.
+      enriched.district_text = district;
     }
     return enriched;
   }

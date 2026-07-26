@@ -1,4 +1,4 @@
-﻿import { useState } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   PlusIcon, MagnifyingGlassIcon, MapPinIcon, HomeIcon,
@@ -30,7 +30,8 @@ const statusConfig: Record<string, { label: string; color: string; dot: string }
 const emptyForm = {
   title: '', property_type: 'apartment', purpose: 'sale', status: 'available',
   occupancy_type: '', entrance_type: '',
-  price: '', area_sqm: '', rooms: '', bathrooms: '', kitchens: '', living_rooms: '', address: '', google_maps_url: '', description_ar: '',
+  price: '', area_sqm: '', rooms: '', bathrooms: '', kitchens: '', living_rooms: '',
+  city_id: '', district_id: '', address: '', google_maps_url: '', description_ar: '',
   is_featured: false, negotiable: true,
   main_image_url: '', extra_images: [] as string[],
   features: [] as string[],
@@ -53,6 +54,8 @@ function PropertyModal({ property, onClose }: { property?: any; onClose: () => v
     bathrooms:      property.bathrooms ?? '',
     kitchens:       property.kitchens ?? '',
     living_rooms:   property.living_rooms ?? '',
+    city_id:        property.city_id ?? '',
+    district_id:    property.district_id ?? '',
     address:        property.address ?? '',
     google_maps_url: property.google_maps_url ?? '',
     description_ar: property.description_ar ?? '',
@@ -67,6 +70,24 @@ function PropertyModal({ property, onClose }: { property?: any; onClose: () => v
   const [newFeature, setNewFeature] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
+
+  // The office operates in one city, so there's nothing to pick there — just
+  // auto-select it once it loads and let the admin choose the district. This
+  // is what the bot actually filters on: a listing whose district was only
+  // ever typed into the free-text address never matched a district search.
+  const { data: citiesRes } = useQuery({ queryKey: ['cities'], queryFn: propertiesApi.cities });
+  const cities: any[] = (citiesRes as any)?.data?.data ?? [];
+  const cityId = form.city_id || cities[0]?.id || '';
+  useEffect(() => {
+    if (!form.city_id && cities[0]?.id) set('city_id', cities[0].id);
+  }, [cities.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const { data: districtsRes } = useQuery({
+    queryKey: ['districts', cityId],
+    queryFn: () => propertiesApi.districts(Number(cityId)),
+    enabled: Boolean(cityId),
+  });
+  const districts: any[] = (districtsRes as any)?.data?.data ?? [];
 
   const addFeature = () => {
     const f = newFeature.trim();
@@ -147,6 +168,8 @@ function PropertyModal({ property, onClose }: { property?: any; onClose: () => v
       bathrooms:    parseInt(String(form.bathrooms))    || undefined,
       kitchens:     parseInt(String(form.kitchens))     || undefined,
       living_rooms: parseInt(String(form.living_rooms)) || undefined,
+      city_id:     form.city_id     ? Number(form.city_id)     : undefined,
+      district_id: form.district_id ? Number(form.district_id) : undefined,
       address:        form.address        || undefined,
       google_maps_url: form.google_maps_url || undefined,
       description_ar: form.description_ar || undefined,
@@ -357,10 +380,23 @@ function PropertyModal({ property, onClose }: { property?: any; onClose: () => v
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">الموقع / الحي</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                الحي <span className="text-xs font-normal text-gray-400">(هذا ما يبحث به البوت — اختره ليطابق طلبات العملاء)</span>
+              </label>
+              <select className="input w-full" value={form.district_id}
+                onChange={(e) => set('district_id', e.target.value)}>
+                <option value="">— اختر الحي —</option>
+                {districts.map((d: any) => <option key={d.id} value={d.id}>{d.name_ar}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                العنوان التفصيلي <span className="text-xs font-normal text-gray-400">(اختياري — تفاصيل إضافية غير الحي)</span>
+              </label>
               <input className="input w-full" value={form.address}
                 onChange={(e) => set('address', e.target.value)}
-                placeholder="مثال: حي النرجس، الرياض" />
+                placeholder="مثال: قرب مسجد كذا، شارع كذا" />
             </div>
 
             <div>

@@ -322,6 +322,9 @@ export interface PropertySearchParams {
   entrance_type?: EntranceType;
   city_ids?: number[];
   district_ids?: number[];
+  /** Raw district name as the customer typed it — matched against the address
+   *  text too, since many listings have no district_id set. See search(). */
+  district_text?: string;
   price_min?: number;
   price_max?: number;
   area_min?: number;
