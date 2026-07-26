@@ -2,7 +2,7 @@
 import { cacheGet, cacheSet, cacheKeys } from '../database/redis.js';
 import { logger } from '../config/logger.js';
 import { config } from '../config/index.js';
-import { processMessage, transcribeAudio, analyzeImage, formatPropertyDetails, classifyOption } from '../ai/agent.js';
+import { processMessage, transcribeAudio, analyzeImage, formatPropertyDetails, classifyOption, pickUnclearAudio } from '../ai/agent.js';
 import { propertyService } from './property.service.js';
 import { clientService } from './client.service.js';
 import { whatsappService } from './whatsapp.service.js';
@@ -325,19 +325,32 @@ export class ConversationService {
       // arrived as an empty string everywhere else, so the bot either
       // repeated "لم أفهم اختيارك" or silently recorded a blank complaint /
       // listing description. Doing it here means every step sees real text.
+      //
+      // Saudi and Egyptian dialects both transcribe fine with whisper-large-v3
+      // — no dialect-specific handling is needed. What genuinely fails is a
+      // noisy or clipped recording, which transcribeAudio's own confidence
+      // check catches; when it does, tell the customer warmly instead of
+      // guessing at what they said (handled below, after the rate-limit and
+      // handoff checks — this branch only decides whether the reply is honest).
+      let audioUnclear = false;
       if (message.message_type === 'audio' && message.media_url) {
         try {
           const buf = await whatsappService.downloadMedia(message.whatsapp_message_id!, this.waInstance(conversation));
-          const transcript = await transcribeAudio(buf, message.media_mime_type ?? 'audio/ogg');
-          message.content = transcript;
-          await this.db('messages').where('id', message.id)
-            .update({ content: transcript, transcription: transcript })
-            .catch((e: any) => logger.warn('transcription save failed', { error: e?.message }));
+          const { text: transcript, confident } = await transcribeAudio(buf, message.media_mime_type ?? 'audio/ogg');
+          if (confident && transcript) {
+            message.content = transcript;
+            await this.db('messages').where('id', message.id)
+              .update({ content: transcript, transcription: transcript })
+              .catch((e: any) => logger.warn('transcription save failed', { error: e?.message }));
+          } else {
+            audioUnclear = true;
+            await this.db('messages').where('id', message.id)
+              .update({ transcription: transcript || null })
+              .catch((e: any) => logger.warn('transcription save failed', { error: e?.message }));
+          }
         } catch (e: any) {
+          audioUnclear = true;
           logger.warn('audio transcription failed', { error: e?.message, conversationId: conversation.id });
-          // Leave content empty rather than guessing — the flow steps below
-          // already handle empty text by re-asking, which is honest here:
-          // the bot genuinely could not make out what was said.
         }
       }
 
@@ -365,6 +378,18 @@ export class ConversationService {
       if (conversation.is_ai_enabled === false) {
         // Log it: a silent return is impossible to diagnose from the outside.
         logger.info('AI reply skipped — human has taken over', { conversationId: conversation.id });
+        return;
+      }
+
+      // The recording didn't come through clearly — say so warmly (like a
+      // person would, not an error message) and ask for text instead. The
+      // flow state is left exactly as it was: nothing here was consumed, so
+      // whatever menu was already on screen is still valid to tap or type
+      // into on the next message. A brand-new customer hasn't seen that menu
+      // yet at all, so show it now rather than leaving them with nothing.
+      if (audioUnclear) {
+        await this.reply(client, conversation, pickUnclearAudio());
+        if (isNew) await this.stepWelcome(client, conversation, { state: 'welcome' }, true);
         return;
       }
 

@@ -334,20 +334,60 @@ const parseAIOutput = (
 // Audio Transcription
 // =============================================================================
 
-export const transcribeAudio = async (audioBuffer: Buffer, mimeType: string): Promise<string> => {
+export interface TranscriptionResult {
+  text: string;
+  /** False when Whisper's own signal says this probably wasn't clear speech
+   *  — the caller should ask the customer to type instead of acting on it. */
+  confident: boolean;
+}
+
+/**
+ * whisper-large-v3 (used on Groq) is multilingual and handles Saudi, Egyptian,
+ * and other Arabic dialects without any special casing — forcing `language:
+ * 'ar'` only tells it which language to expect, not which dialect, so no
+ * dialect-specific tuning is needed or possible here. What actually causes a
+ * bad transcription is background noise, a clipped recording, or overlapping
+ * speech — verbose_json exposes Whisper's own per-segment no_speech_prob,
+ * which is the model's own confidence that a segment was speech at all, and
+ * is a far more honest signal than just accepting whatever text comes back.
+ */
+export const transcribeAudio = async (audioBuffer: Buffer, mimeType: string): Promise<TranscriptionResult> => {
   const settings = await getAISettings();
   const openai = buildClient(settings);
   const isGroqCall = settings.base_url?.includes('groq.com') ?? false;
   const ext = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('mp4') ? 'mp4' : 'wav';
   const file = new File([audioBuffer], `audio.${ext}`, { type: mimeType });
-  const transcription = await openai.audio.transcriptions.create({
+
+  const raw: any = await openai.audio.transcriptions.create({
     file,
     model: isGroqCall ? 'whisper-large-v3' : (config.openai.whisperModel ?? 'whisper-1'),
     language: 'ar',
-    response_format: 'text',
+    temperature: 0,
+    response_format: 'verbose_json',
   });
-  return typeof transcription === 'string' ? transcription : (transcription as any).text ?? '';
+
+  const text = (typeof raw === 'string' ? raw : raw?.text ?? '').trim();
+  const segments: any[] = Array.isArray(raw?.segments) ? raw.segments : [];
+
+  let confident = text.length >= 2;
+  if (confident && segments.length > 0) {
+    const avgNoSpeech = segments.reduce((sum, s) => sum + (Number(s?.no_speech_prob) || 0), 0) / segments.length;
+    if (avgNoSpeech > 0.5) confident = false;
+  }
+
+  return { text, confident };
 };
+
+/** Warm, human-sounding — never a robotic error code — and never blocks the
+ *  menu already on screen: the customer can still tap it, or type instead. */
+const UNCLEAR_AUDIO_REPLIES = [
+  'عذراً، ما وضح لي المقطع الصوتي بالكامل. تكتب لي طلبك بسرعة؟',
+  'يبدو إن في تشويش على التسجيل ومو واضح لي تماماً. اكتبه لي وأخدمك فوراً.',
+  'ما قدرت أميّز التسجيل بشكل كافي، عذراً. ممكن تكتب طلبك بدل الصوت؟',
+  'صوتك ما وصل واضح كفاية. اكتب لي طلبك وأنا جاهز أساعدك.',
+];
+export const pickUnclearAudio = (): string =>
+  UNCLEAR_AUDIO_REPLIES[Math.floor(Math.random() * UNCLEAR_AUDIO_REPLIES.length)]!;
 
 // =============================================================================
 // Image Analysis
