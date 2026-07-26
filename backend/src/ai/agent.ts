@@ -586,3 +586,54 @@ const calculateCost = (tokens: number, model: string): number => {
 export const extractIntentAndEntities = async (msg: string) => {
   return { intent: { primary: 'general_inquiry', confidence: 0.7 }, extracted_data: {}, sentiment: 'neutral' as const, language: 'ar' as const, intentTokens: 0 };
 };
+
+// =============================================================================
+// Menu-option classification — a smarter fallback than keyword matching
+// =============================================================================
+
+/**
+ * The guided flow (welcome → intent → category → type → entry) resolves a
+ * customer's reply against a hand-written keyword list first, because that
+ * path is instant and free. But real phrasing drifts past any fixed list —
+ * "استراحة", "شاليه", "دوبلكس" and endless variants never matched, and the
+ * customer just saw "لم أفهم اختيارك" on repeat. This is the fallback: ask
+ * the model which of the *currently offered* options the message actually
+ * means, or admit none of them fit. It can never invent an option that
+ * wasn't offered — only pick among them or return null.
+ */
+export async function classifyOption(
+  message: string,
+  options: { id: string; title: string }[],
+): Promise<string | null> {
+  if (!message.trim() || options.length === 0) return null;
+  try {
+    const settings = await getAISettings();
+    const openai = buildClient(settings);
+    const list = options.map((o) => `${o.id}: ${o.title}`).join('\n');
+
+    const completion = await openai.chat.completions.create({
+      model: settings.model,
+      messages: [
+        {
+          role: 'system',
+          content: 'أنت تصنّف نية عميل عربي إلى أحد الخيارات المعروضة فقط. رد بمعرّف الخيار (id) فقط دون أي شرح، أو الكلمة null إن لم ينطبق أي خيار إطلاقاً على رسالة العميل.',
+        },
+        {
+          role: 'user',
+          content: `الخيارات المتاحة:\n${list}\n\nرسالة العميل: "${message.trim()}"\n\nالمعرّف الأنسب (أو null):`,
+        },
+      ],
+      temperature: 0,
+      max_tokens: 12,
+    });
+
+    const raw = (completion.choices[0]?.message?.content ?? '').trim().toLowerCase();
+    const matched = options.find((o) => raw === o.id.toLowerCase() || raw.includes(o.id.toLowerCase()));
+    return matched?.id ?? null;
+  } catch (error: any) {
+    // A classification failure must never block the flow — the caller falls
+    // back to asking the customer again, same as before this existed.
+    logger.warn('classifyOption failed', { error: error?.message });
+    return null;
+  }
+}

@@ -2,7 +2,7 @@
 import { cacheGet, cacheSet, cacheKeys } from '../database/redis.js';
 import { logger } from '../config/logger.js';
 import { config } from '../config/index.js';
-import { processMessage, transcribeAudio, analyzeImage, formatPropertyDetails } from '../ai/agent.js';
+import { processMessage, transcribeAudio, analyzeImage, formatPropertyDetails, classifyOption } from '../ai/agent.js';
 import { propertyService } from './property.service.js';
 import { clientService } from './client.service.js';
 import { whatsappService } from './whatsapp.service.js';
@@ -571,6 +571,27 @@ export class ConversationService {
     return null;
   }
 
+  /**
+   * Same as resolveChoice, but when the free-word keyword list comes up empty
+   * on real free text (not a tap, not a bare number), ask the model which of
+   * the *offered* options the customer meant before giving up and repeating
+   * the menu. This is what lets "استراحة" / "شاليه" / odd phrasing resolve
+   * correctly instead of looping "لم أفهم اختيارك".
+   */
+  private async resolveChoiceSmart(clickedId: string | null, text: string, ctx: FlowContext): Promise<string | null> {
+    const direct = this.resolveChoice(clickedId, text, ctx);
+    if (direct) return direct;
+
+    const options = ctx.pending ?? [];
+    const norm = normalizeAr(text);
+    // Nothing to classify: no free text, or it was already a bare number
+    // (resolveChoice would have matched a valid one; an out-of-range number
+    // is not something the model can rescue either).
+    if (!norm || /^\d+$/.test(norm) || options.length === 0) return null;
+
+    return classifyOption(text, options.map((o) => ({ id: o.id, title: o.title })));
+  }
+
   /** Re-offer the same options without sounding like a broken record. */
   private async reAsk(client: Client, conversation: Conversation, ctx: FlowContext): Promise<void> {
     const options = ctx.pending ?? [];
@@ -718,7 +739,7 @@ export class ConversationService {
     clickedId: string | null, text: string,
     client: Client, conversation: Conversation, ctx: FlowContext,
   ): Promise<void> {
-    const choice = this.resolveChoice(clickedId, text, ctx);
+    const choice = await this.resolveChoiceSmart(clickedId, text, ctx);
 
     if (choice === 'intent_sell') {
       await this.saveFlowContext(conversation.id, { ...ctx, state: 'sell_details', deal_kind: 'sell', pending: undefined });
@@ -767,7 +788,7 @@ export class ConversationService {
     clickedId: string | null, text: string,
     client: Client, conversation: Conversation, ctx: FlowContext, message: Message,
   ): Promise<void> {
-    const choice = this.resolveChoice(clickedId, text, ctx);
+    const choice = await this.resolveChoiceSmart(clickedId, text, ctx);
 
     if (choice === 'cat_residential') {
       await this.askOptions(client, conversation, ctx, 'type', 'نوع العقار السكني', 'اختر ما يناسبك:', [
@@ -805,7 +826,7 @@ export class ConversationService {
     clickedId: string | null, text: string,
     client: Client, conversation: Conversation, ctx: FlowContext, message: Message,
   ): Promise<void> {
-    const choice = this.resolveChoice(clickedId, text, ctx);
+    const choice = await this.resolveChoiceSmart(clickedId, text, ctx);
     if (!choice) { await this.reAsk(client, conversation, ctx); return; }
 
     if (choice === 'type_house' || choice === 'type_apt_family') {
@@ -836,7 +857,7 @@ export class ConversationService {
     clickedId: string | null, text: string,
     client: Client, conversation: Conversation, ctx: FlowContext, message: Message,
   ): Promise<void> {
-    const choice = this.resolveChoice(clickedId, text, ctx);
+    const choice = await this.resolveChoiceSmart(clickedId, text, ctx);
     const map: Record<string, string> = ctx.entry_for === 'apt_family'
       ? { entry_private: 'apartment_family_private', entry_shared: 'apartment_family_shared' }
       : { entry_private: 'house_private', entry_shared: 'house_shared' };
