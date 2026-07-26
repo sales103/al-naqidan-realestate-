@@ -435,11 +435,25 @@ export class ConversationService {
     const hasDetailWord = DETAIL_WORDS.some((w) => normDetail.includes(normalizeAr(w)));
     const hasLocationWord = LOCATION_WORDS.some((w) => normDetail.includes(normalizeAr(w)));
     const asksAboutOffice = OFFICE_WORDS.some((w) => normDetail.includes(normalizeAr(w)));
-    const hasShown = (ctx.last_shown_properties?.length ?? 0) > 0;
+    const shownCount = ctx.last_shown_properties?.length ?? 0;
+    const hasShown = shownCount > 0;
+
+    // A bare "1" right after a batch of listings means "that one" — the bot
+    // itself asks for exactly that ("اكتب رقم العقار"). It only counts while
+    // nothing else is waiting on a number: during the menu steps, and while
+    // picking a viewing time, a digit is choosing an option instead. ("0" never
+    // reaches here — it is the menu shortcut, handled above.)
+    const MENU_STATES: FlowState[] = ['welcome', 'intent', 'category', 'type', 'entry', 'booking_time'];
+    const awaitingMenuChoice = MENU_STATES.includes(ctx.state) || (ctx.pending?.length ?? 0) > 0;
+    const bareNumber = normDetail.match(/^(\d+)$/);
+    const pickedIndex = bareNumber ? parseInt(bareNumber[1]!, 10) : NaN;
+    const picksListing = !awaitingMenuChoice
+      && Number.isFinite(pickedIndex) && pickedIndex >= 1 && pickedIndex <= shownCount;
+
     // A number is no longer required: "تفاصيل" or "الموقع" on its own is a
     // clear request once listings have been sent — handleDetails resolves
     // which one, and asks only when the batch is genuinely ambiguous.
-    if (hasCode || ((hasDetailWord || (hasLocationWord && !asksAboutOffice)) && hasShown)) {
+    if (hasCode || picksListing || ((hasDetailWord || (hasLocationWord && !asksAboutOffice)) && hasShown)) {
       await this.handleDetails(message, client, conversation, ctx);
       return;
     }

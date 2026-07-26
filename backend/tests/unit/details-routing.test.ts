@@ -26,12 +26,22 @@ const DETAIL_WORDS = ['تفاصيل', 'تفصيل', 'معلومات عن', 'ال
 const LOCATION_WORDS = ['موقع', 'عنوان', 'خريطه', 'لوكيشن', 'location'];
 const OFFICE_WORDS = ['مكتبكم', 'مكتبك', 'شركتكم', 'فرعكم', 'مقركم'];
 
+const MENU_STATES = ['welcome', 'intent', 'category', 'type', 'entry', 'booking_time'];
+
 /** True when the message should be handled as a property-details request. */
-const wantsDetails = (text: string, shownCount: number): boolean => {
+const wantsDetails = (text: string, shownCount: number, state = 'ai', pending = 0): boolean => {
   const norm = normalizeAr(text);
   const has = (words: string[]) => words.some((w) => norm.includes(normalizeAr(w)));
   if (CODE_PATTERN.test(text)) return true;
-  return (has(DETAIL_WORDS) || (has(LOCATION_WORDS) && !has(OFFICE_WORDS))) && shownCount > 0;
+
+  const awaitingMenuChoice = MENU_STATES.includes(state) || pending > 0;
+  const bare = norm.match(/^(\d+)$/);
+  const picked = bare ? parseInt(bare[1]!, 10) : NaN;
+  const picksListing = !awaitingMenuChoice
+    && Number.isFinite(picked) && picked >= 1 && picked <= shownCount;
+
+  return picksListing
+    || ((has(DETAIL_WORDS) || (has(LOCATION_WORDS) && !has(OFFICE_WORDS))) && shownCount > 0);
 };
 
 /** Which listing handleDetails settles on; null means it has to ask. */
@@ -68,6 +78,28 @@ describe('details request — routing', () => {
   it('does not hijack a search when no listing has been sent', () => {
     // Nothing to describe yet, so the search must still run.
     expect(wantsDetails('الموقع', 0)).toBe(false);
+  });
+});
+
+describe('details request — a bare number picks a listing', () => {
+  it('reads "1" after a batch as "that one"', () => {
+    // The bot literally asks for this: "اكتب رقم العقار أو اسأل عن أي تفاصيل".
+    expect(wantsDetails('1', 3)).toBe(true);
+  });
+
+  it('leaves digits to the menu while a menu is on screen', () => {
+    expect(wantsDetails('2', 3, 'category')).toBe(false);
+    expect(wantsDetails('2', 3, 'type')).toBe(false);
+    expect(wantsDetails('2', 3, 'booking_time')).toBe(false);
+    expect(wantsDetails('2', 3, 'ai', 4)).toBe(false); // options still pending
+  });
+
+  it('ignores a number outside the batch', () => {
+    expect(wantsDetails('7', 3)).toBe(false);
+  });
+
+  it('ignores a number when no listing was sent', () => {
+    expect(wantsDetails('1', 0)).toBe(false);
   });
 });
 
