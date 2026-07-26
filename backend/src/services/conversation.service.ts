@@ -319,6 +319,28 @@ export class ConversationService {
         } as unknown as Message;
       }
 
+      // Transcribe voice notes right away, before any flow logic runs. This
+      // used to happen only inside the free-form AI stage — a voice message
+      // sent while still on a guided menu (نوع العقار، شكوى، تفاصيل بيع...)
+      // arrived as an empty string everywhere else, so the bot either
+      // repeated "لم أفهم اختيارك" or silently recorded a blank complaint /
+      // listing description. Doing it here means every step sees real text.
+      if (message.message_type === 'audio' && message.media_url) {
+        try {
+          const buf = await whatsappService.downloadMedia(message.whatsapp_message_id!, this.waInstance(conversation));
+          const transcript = await transcribeAudio(buf, message.media_mime_type ?? 'audio/ogg');
+          message.content = transcript;
+          await this.db('messages').where('id', message.id)
+            .update({ content: transcript, transcription: transcript })
+            .catch((e: any) => logger.warn('transcription save failed', { error: e?.message }));
+        } catch (e: any) {
+          logger.warn('audio transcription failed', { error: e?.message, conversationId: conversation.id });
+          // Leave content empty rather than guessing — the flow steps below
+          // already handle empty text by re-asking, which is honest here:
+          // the bot genuinely could not make out what was said.
+        }
+      }
+
       await whatsappService.markAsRead(whatsappMessageId, chatId, this.waInstance(conversation));
       whatsappService.sendTyping(client.phone, this.waInstance(conversation)).catch(() => {});
 
@@ -997,15 +1019,10 @@ export class ConversationService {
   ): Promise<void> {
     const startTime = Date.now();
     try {
+      // Voice notes are transcribed as soon as they arrive in handleWebhook now
+      // (every flow step needs real text, not just this AI stage), so
+      // message.content already holds the transcript when it succeeded.
       let messageContent = message.content ?? '';
-
-      if (message.message_type === 'audio' && message.media_url) {
-        try {
-          const buf = await whatsappService.downloadMedia(message.whatsapp_message_id!, this.waInstance(conversation));
-          messageContent = await transcribeAudio(buf, message.media_mime_type ?? 'audio/ogg');
-          await this.db('messages').where('id', message.id).update({ transcription: messageContent });
-        } catch { messageContent = 'رسالة صوتية'; }
-      }
 
       if (message.message_type === 'image' && message.media_url) {
         try { messageContent = await analyzeImage(message.media_url, message.caption ?? undefined); }
