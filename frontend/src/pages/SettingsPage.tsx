@@ -148,7 +148,10 @@ function AISettings() {
       auto_respond: form.auto_respond, respect_hours: form.respect_hours,
       max_tokens: parseInt(form.max_tokens) || 500,
       temperature: parseFloat(form.temperature) || 0.3,
-      ...(form.openai_key ? { openai_key: form.openai_key } : {}),
+      // A key copied from a password manager or PDF often carries an
+      // invisible trailing space/newline — trim before it ever reaches the
+      // provider, since that alone reads as "Invalid API Key" with no other clue.
+      ...(form.openai_key.trim() ? { openai_key: form.openai_key.trim() } : {}),
     }),
     onSuccess: () => { toast.success('تم حفظ إعدادات الذكاء الاصطناعي'); qc.invalidateQueries({ queryKey: ['settings'] }); },
     onError: (e: any) => toast.error(e.response?.data?.error ?? 'فشل الحفظ'),
@@ -178,7 +181,11 @@ function AISettings() {
     },
     {
       value: 'openai', label: 'OpenAI', badge: 'مدفوع',
-      url: '', color: '#10A37F',
+      // Must be OpenAI's real endpoint, not '' — an empty string used to be
+      // dropped on save, and the backend's old fallback chain picked up a
+      // leftover Groq URL from Railway's env vars instead, sending an
+      // OpenAI key to Groq's API where it was correctly rejected.
+      url: 'https://api.openai.com/v1', color: '#10A37F',
       models: [
         { value: 'gpt-4o',      label: 'GPT-4o',      badge: 'الأذكى' },
         { value: 'gpt-4o-mini', label: 'GPT-4o Mini', badge: 'موصى به' },

@@ -35,10 +35,16 @@ async function getAISettings(): Promise<AISettings> {
     const savedKey = row?.value?.openai_key ?? row?.value?.api_key;
     if (savedKey) {
       const v = row.value as any;
+      // Once a key is saved in the DB, this settings row is authoritative —
+      // a missing base_url means "OpenAI's own endpoint", never the Groq
+      // env-var override below. That override exists only to bootstrap a
+      // fresh install with nothing configured yet; mixing it in here sent
+      // every OpenAI request to Groq's endpoint with an OpenAI key attached,
+      // which Groq correctly rejected as an invalid key.
       _cachedSettings = {
         openai_key: savedKey,
         model: v.model ?? config.openai.model,
-        base_url: v.base_url ?? config.openai.baseUrl ?? 'https://api.openai.com/v1',
+        base_url: v.base_url || 'https://api.openai.com/v1',
         max_tokens: v.max_tokens ?? config.openai.maxTokens,
         temperature: v.temperature ?? config.openai.temperature,
         system_prompt: v.system_prompt ?? '',

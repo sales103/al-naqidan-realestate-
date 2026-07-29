@@ -75,6 +75,12 @@ router.put('/:key', requireAdmin, async (req: Request, res: Response, next: Next
     const SECRET_FIELDS = ['openai_key', 'api_key', 'password', 'smtp_password', 'resend_api_key'];
     const existing = await db('system_settings').where('key', key).first();
     const merged: Record<string, any> = { ...value };
+    // A trailing space/newline from a pasted secret is invisible in the UI
+    // but breaks the key outright — strip it at the one place every secret
+    // passes through, regardless of which client sent it.
+    for (const field of SECRET_FIELDS) {
+      if (typeof merged[field] === 'string') merged[field] = merged[field].trim();
+    }
     for (const field of SECRET_FIELDS) {
       const incoming = merged[field];
       const stored = existing?.value?.[field];
