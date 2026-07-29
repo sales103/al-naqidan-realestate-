@@ -39,6 +39,12 @@ type FlowState =
   | 'sell_details' | 'manage_details'
   | 'ai' | 'booking_time' | 'complaint' | 'complaint_intake' | 'escalated';
 
+/** What a customer's very first message already answers on its own — see
+ *  ConversationService.detectFastTrack. */
+type FastTrackMatch =
+  | { kind: 'step'; level: 'intent' | 'category' | 'type'; clickedId: string }
+  | { kind: 'apartment_occupancy' };
+
 /** One selectable option. `keywords` let the customer answer in their own words. */
 interface FlowOption {
   id: string;
@@ -389,7 +395,7 @@ export class ConversationService {
       // yet at all, so show it now rather than leaving them with nothing.
       if (audioUnclear) {
         await this.reply(client, conversation, pickUnclearAudio());
-        if (isNew) await this.stepWelcome(client, conversation, { state: 'welcome' }, true);
+        if (isNew) await this.stepWelcome(client, conversation, { state: 'welcome' }, true, message);
         return;
       }
 
@@ -511,7 +517,9 @@ export class ConversationService {
       await this.saveFlowContext(conversation.id, { state: 'welcome' });
       await this.reply(client, conversation, 'تمام، نبدأ من جديد');
       await sleep(400);
-      await this.stepWelcome(client, conversation, { state: 'welcome' }, true);
+      // An explicit "ابدأ من جديد" means start clean — show the full menu
+      // rather than re-analysing the restart command itself as a request.
+      await this.stepWelcome(client, conversation, { state: 'welcome' }, true, { ...message, content: '' });
       return;
     }
     const clickedId = this.extractButtonId(payload);
@@ -612,7 +620,7 @@ export class ConversationService {
       }
     }
 
-    if (isNew || ctx.state === 'welcome') { await this.stepWelcome(client, conversation, ctx, isNew); return; }
+    if (isNew || ctx.state === 'welcome') { await this.stepWelcome(client, conversation, ctx, isNew, message); return; }
     if (ctx.state === 'ai' || ctx.state === 'escalated') { await this.processWithAI(message, client, conversation, ctx, payload); return; }
     if (ctx.state === 'intent') { await this.stepIntent(clickedId, text, client, conversation, ctx); return; }
     if (ctx.state === 'category') { await this.stepCategory(clickedId, text, client, conversation, ctx, message); return; }
@@ -791,7 +799,7 @@ export class ConversationService {
   // ===========================================================================
 
   private async stepWelcome(
-    client: Client, conversation: Conversation, ctx: FlowContext, isNew: boolean,
+    client: Client, conversation: Conversation, ctx: FlowContext, isNew: boolean, message: Message,
   ): Promise<void> {
     const returning = !isNew && Boolean((client as any).status) && (client as any).status !== 'new';
 
@@ -823,8 +831,109 @@ export class ConversationService {
       await sleep(500);
     }
 
-    await this.askIntent(client, conversation, ctx);
+    // The customer often says what they want in the very first message —
+    // "عايز شقة", "أبي أستأجر", "شقة عزاب للإيجار". Asking "كيف نقدر نخدمك؟"
+    // from scratch after that ignores what they just said, which is exactly
+    // what makes a guided menu feel like a form instead of a conversation.
+    // Skip straight to whatever question is still genuinely missing.
+    const fastTrack = this.detectFastTrack(message.content ?? '');
+    if (fastTrack) {
+      await this.applyFastTrack(fastTrack, message, client, conversation, ctx);
+    } else {
+      await this.askIntent(client, conversation, ctx);
+    }
     await clientService.update(client.id, { status: 'contacted' } as any);
+  }
+
+  /**
+   * Reads the customer's own first message against the exact same keyword
+   * lists the menus already use (see askIntent / stepCategory / stepType),
+   * most specific first — a named property type says more than a vague
+   * "أبحث عن شراء" would. A bare "شقة" with no عوائل/عزاب qualifier is
+   * deliberately its own case: ambiguous on purpose, so it asks only that
+   * one missing question instead of the full residential menu.
+   */
+  private detectFastTrack(text: string): FastTrackMatch | null {
+    const norm = normalizeAr(text);
+    if (!norm) return null;
+    const has = (words: string[]) => words.some((w) => norm.includes(normalizeAr(w)));
+
+    const TYPE_MATCHERS: { id: string; keywords: string[] }[] = [
+      { id: 'type_apt_single', keywords: ['عزاب', 'شقه عزاب', 'اعزب', 'مفرد'] },
+      { id: 'type_apt_family', keywords: ['شقه عوايل', 'عوايل', 'عائله', 'شقه عائليه'] },
+      { id: 'type_house',      keywords: ['بيت', 'دار', 'منزل', 'فيلا', 'قصر'] },
+      { id: 'type_land',       keywords: ['ارض', 'اراضي', 'قطعه'] },
+      { id: 'com_shop',        keywords: ['محل', 'دكان'] },
+      { id: 'com_hall',        keywords: ['صاله', 'معرض'] },
+      { id: 'com_office',      keywords: ['مكتب', 'اداري'] },
+      { id: 'com_storage',     keywords: ['مستودع', 'مخزن'] },
+    ];
+    for (const m of TYPE_MATCHERS) {
+      if (has(m.keywords)) return { kind: 'step', level: 'type', clickedId: m.id };
+    }
+
+    if (has(['شقة', 'شقه'])) return { kind: 'apartment_occupancy' };
+
+    const CATEGORY_MATCHERS: { id: string; keywords: string[] }[] = [
+      { id: 'cat_residential', keywords: ['سكني', 'سكن'] },
+      { id: 'cat_commercial',  keywords: ['تجاري'] },
+      { id: 'cat_rest_house',  keywords: ['استراحه', 'استراحات', 'شاليه', 'شاليهات', 'مخيم'] },
+    ];
+    for (const m of CATEGORY_MATCHERS) {
+      if (has(m.keywords)) return { kind: 'step', level: 'category', clickedId: m.id };
+    }
+
+    const INTENT_MATCHERS: { id: string; keywords: string[] }[] = [
+      { id: 'intent_rent',      keywords: ['ايجار', 'استئجار', 'استاجر', 'مستاجر', 'ابي اجار', 'ابغى اجار'] },
+      { id: 'intent_buy',       keywords: ['شراء', 'شري', 'اشتري', 'تمليك', 'ابي اشتري'] },
+      { id: 'intent_invest',    keywords: ['استثمار', 'استثمر', 'عائد', 'دخل'] },
+      { id: 'intent_sell',      keywords: ['ابيع', 'بيع عقاري', 'ابغى ابيع', 'عندي عقار للبيع', 'اعرض للبيع'] },
+      { id: 'intent_manage',    keywords: ['اداره املاك', 'ادارة املاك', 'تاجير عقاري', 'ادير عقاري'] },
+      { id: 'intent_complaint', keywords: ['شكوي', 'شكوى', 'اشتكي', 'شكاوي', 'مشكله', 'مشكلة', 'اعتراض'] },
+    ];
+    for (const m of INTENT_MATCHERS) {
+      if (has(m.keywords)) return { kind: 'step', level: 'intent', clickedId: m.id };
+    }
+
+    return null;
+  }
+
+  /** Ask only the one thing a bare "شقة" leaves unanswered. */
+  private async askApartmentOccupancy(client: Client, conversation: Conversation, ctx: FlowContext): Promise<void> {
+    await this.askOptions(client, conversation, ctx, 'type', 'نوع الشقة', 'شقة عوائل ولا عزاب؟', [
+      { id: 'type_apt_family', title: 'شقة عوائل', keywords: ['شقه عوايل', 'عوايل', 'عائله', 'شقه عائليه'] },
+      { id: 'type_apt_single', title: 'شقة عزاب',  keywords: ['عزاب', 'شقه عزاب', 'اعزب', 'مفرد'] },
+    ]);
+  }
+
+  /**
+   * Feeds the resolved choice straight into the same step function a menu
+   * tap would have reached — resolveChoice() honours a given clickedId
+   * immediately, so this reuses every existing branch (entry question,
+   * sell/manage/complaint handoff, search) with no duplicated logic. Also
+   * captures purpose (rent/buy) from the same message when mentioned
+   * alongside a type, since the step we're about to skip is the one that
+   * would normally have asked for it.
+   */
+  private async applyFastTrack(
+    match: FastTrackMatch, message: Message, client: Client, conversation: Conversation, ctx: FlowContext,
+  ): Promise<void> {
+    const norm = normalizeAr(message.content ?? '');
+    const has = (words: string[]) => words.some((w) => norm.includes(normalizeAr(w)));
+    let purpose: 'rent' | 'buy' | undefined;
+    if (has(['ايجار', 'استئجار', 'استاجر', 'مستاجر'])) purpose = 'rent';
+    else if (has(['شراء', 'شري', 'اشتري', 'تمليك'])) purpose = 'buy';
+    const ctxP = purpose ? { ...ctx, purpose } : ctx;
+
+    if (match.kind === 'apartment_occupancy') {
+      await this.askApartmentOccupancy(client, conversation, ctxP);
+      return;
+    }
+
+    const text = message.content ?? '';
+    if (match.level === 'type')     { await this.stepType(match.clickedId, text, client, conversation, ctxP, message); return; }
+    if (match.level === 'category') { await this.stepCategory(match.clickedId, text, client, conversation, ctxP, message); return; }
+    await this.stepIntent(match.clickedId, text, client, conversation, ctxP);
   }
 
   // ===========================================================================
