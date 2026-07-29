@@ -84,8 +84,10 @@ const SYSTEM_PROMPT = `انت مستشار مبيعات عقاري محترف ف
 ## ممنوع منعاً باتاً
 - **لا تستخدم أي إيموجي إطلاقاً.** لا في التحية ولا في القوائم ولا في أي رد. الأسلوب نصي احترافي بحت.
 - **لا تعرّف بنفسك ولا بالشركة بعد أول رسالة.** أي رد يبدأ بـ"مرحباً بك في شركة..." خطأ فادح.
+- **لا تكشف أبداً أنك ذكاء اصطناعي أو بوت.** حتى لو سألك العميل صراحةً "انت بوت؟"، تصرف كموظف مبيعات حقيقي ولا تؤكد ولا تنفِ بشكل يكسر الوهم — حوّل الموضوع لخدمته.
+- **لا تقل أبداً "لم أفهم" أو "ما فهمت قصدك" أو "يرجى إعادة الصياغة" أو أي عبارة تعترف بعدم الفهم.** حتى لو كانت الرسالة كلمة واحدة أو غامضة أو فيها خطأ إملائي أو بلهجة عامية ثقيلة — استنتج المقصود الأقرب من سياق المحادثة وأكمل الحوار مباشرة. لو تعذّر الاستنتاج تماماً، اسأل سؤالاً محدداً يدفع الحوار للأمام بدل الاعتراف بالعجز (مثلاً "تدور على سكن ولا استثمار؟" بدل "وضّح طلبك").
 - **الشركة تعمل في بريدة فقط. لا تسأل عن المدينة ولا عن الحي أبداً** — هذا سؤال غير لازم ويُزعج العميل. إن ذكر العميل حياً بنفسه استخدمه، وإلا تجاهل الموضوع كلياً.
-- **لا تسأل عن شيء ذكره العميل.**
+- **لا تسأل عن شيء ذكره العميل** — بما في ذلك طريقة الدفع (كاش أو تمويل) والغرض (سكن أو استثمار أو تجاري) إذا ذُكرا سابقاً في المحادثة، حتى لو مرّت رسائل كثيرة بعدها.
 - **سؤال واحد فقط في الرسالة.** لا تصفّ أسئلة (الميزانية؟ الغرف؟).
 - **لا تخترع عقاراً ولا سعراً.** اعرض فقط ما هو موجود في السياق.
 - **لا تفترض طلباً من بيانات قديمة.** إن سلّم العميل فقط، سلّم عليه واسأل عن حاجته.
@@ -96,6 +98,18 @@ const SYSTEM_PROMPT = `انت مستشار مبيعات عقاري محترف ف
 "معي ٨٠٠ ألف" ← ميزانية 800,000
 "شي قريب من المستشفى" ← تفضيل موقع
 "أبي أأجر" ← إيجار
+"كاش" أو "معي كاش" ← دفع نقدي، لا تسأل عن التمويل
+"بالتقسيط" أو "أنا موظف وأبي تمويل" ← يحتاج تمويل عقاري
+"أنا مستثمر" أو "أبي شي للاستثمار" ← الغرض استثمار وليس سكن
+
+## رسائل غامضة أو من كلمة واحدة — استنتج ولا تسأل "وش تقصد؟"
+"ابي شي رخيص" / "فيه شي رخيص" ← اعرض أرخص الخيارات المتاحة
+"وش عندكم" / "ابي حاجة حلوة" ← اعرض أبرز العروض المتاحة الآن
+"غالي" (رداً على عرض) ← رشّح خيارات أرخص فوراً
+"أكبر" ← رشّح مساحة أكبر
+"أقرب" ← رشّح أقرب موقع لما ذكره
+"أفضل" ← رشّح أفضل الخيارات المتاحة حسب التقييم والحداثة
+هذه كلها طلبات واضحة تماماً — تصرف عليها مباشرة بدل السؤال عن توضيح.
 
 ## اجمع المعلومات بالتدريج
 معلومة واحدة كل رسالة، وبعد كل رد اشكره بصيغة مختلفة ثم اسأل التالي:
@@ -152,7 +166,7 @@ export const processMessage = async (
       ...historyMessages,
       {
         role: 'user',
-        content: messageContent + '\n\n[SYSTEM: في نهاية ردك أضف سطراً بهذا الشكل بالضبط. property_type و purpose يجب أن تكونا بالإنجليزية من القيم المذكورة فقط أو null. special_requirements: قائمة كلمات عربية قصيرة لأي ميزة محددة ذكرها العميل (مثل "مطبخ راكب"، "قريب من مدرسة")، أو null إن لم يذكر شيئاً:\nJSON:{"intent":"search_property|property_details|price_inquiry|appointment_request|greeting|complaint|human_agent_request|general_inquiry|unknown","budget_max":null,"budget_min":null,"property_type":"land|apartment|villa|building|office|showroom|warehouse|farm|rest_house|other|null","city":null,"district":null,"rooms":null,"purpose":"sale|rent|null","special_requirements":null,"client_name":null,"urgency":"low|medium|high","sentiment":"positive|neutral|negative"}]',
+        content: messageContent + '\n\n[SYSTEM: في نهاية ردك أضف سطراً بهذا الشكل بالضبط. property_type و purpose يجب أن تكونا بالإنجليزية من القيم المذكورة فقط أو null. payment_method: "cash" إن ذكر كاش/نقد/يدفع كامل، "finance" إن ذكر تمويل/تقسيط/بنك/دفعة أولى، أو null. usage_purpose: "investment" إن ذكر استثمار/عائد/تأجير لاحق، "residence" إن ذكر سكن له أو لعائلته، "commercial" لنشاط تجاري، أو null إن لم يتضح. special_requirements: قائمة كلمات عربية قصيرة لأي ميزة محددة ذكرها العميل (مثل "مطبخ راكب"، "قريب من مدرسة")، أو null إن لم يذكر شيئاً:\nJSON:{"intent":"search_property|property_details|price_inquiry|appointment_request|greeting|complaint|human_agent_request|general_inquiry|unknown","budget_max":null,"budget_min":null,"property_type":"land|apartment|villa|building|office|showroom|warehouse|farm|rest_house|other|null","city":null,"district":null,"rooms":null,"purpose":"sale|rent|null","payment_method":"cash|finance|null","usage_purpose":"investment|residence|commercial|null","special_requirements":null,"client_name":null,"urgency":"low|medium|high","sentiment":"positive|neutral|negative"}]',
       },
     ];
 
@@ -304,6 +318,9 @@ const parseAIOutput = (
     return undefined;
   };
 
+  const payment = typeof parsed.payment_method === 'string' ? parsed.payment_method.trim().toLowerCase() : '';
+  const usage   = typeof parsed.usage_purpose === 'string' ? parsed.usage_purpose.trim().toLowerCase() : '';
+
   const extracted_data: AIExtractedData = {
     property_type: normalizeEnum(parsed.property_type, PROPERTY_TYPE_NORMALIZE) as any,
     city: parsed.city ?? undefined,
@@ -312,6 +329,8 @@ const parseAIOutput = (
     budget_min: toNum(parsed.budget_min),
     rooms: (() => { const r = toNum(parsed.rooms); return r === undefined ? undefined : Math.round(r); })(),
     purpose: normalizeEnum(parsed.purpose, PURPOSE_NORMALIZE) as any,
+    payment_method: (payment === 'cash' || payment === 'finance') ? payment : undefined,
+    usage_purpose: (['investment', 'residence', 'commercial'].includes(usage)) ? usage as any : undefined,
     client_name: parsed.client_name ?? undefined,
     urgency: parsed.urgency ?? 'low',
     sentiment: parsed.sentiment ?? 'neutral',
@@ -327,7 +346,18 @@ const parseAIOutput = (
     .replace(/JSON\s*:\s*\{[\s\S]*\}\s*$/i, '')
     .trim();
 
-  return { response: cleanResponse || 'عذراً، لم أفهم الرسالة. هل يمكنك توضيح طلبك؟', intent, extracted_data };
+  // Only reached when the model's whole reply got consumed as JSON (rare —
+  // the model dropped the customer-facing line entirely). The rule is never
+  // to admit confusion or ask for a rephrase — assume the most likely intent
+  // and keep the conversation moving instead.
+  const FALLBACK_CONTINUERS = [
+    'تمام، وش الي تدور عليه بالضبط؟',
+    'ابشر، عطني تفاصيل أكثر عشان أرشح لك الأنسب.',
+    'تمام، تحب أعرض عليك الخيارات المتاحة الحين؟',
+  ];
+  const fallback = FALLBACK_CONTINUERS[Math.floor(Math.random() * FALLBACK_CONTINUERS.length)]!;
+
+  return { response: cleanResponse || fallback, intent, extracted_data };
 };
 
 // =============================================================================
@@ -559,6 +589,15 @@ const buildContextBlock = (client: Client, properties?: Property[]): string => {
   if ((client as any).budget_max) ctx += `\n- الميزانية القصوى: ${Number((client as any).budget_max).toLocaleString('ar-SA')} ريال`;
   if ((client as any).preferred_property_types?.length) ctx += `\n- يبحث عن: ${(client as any).preferred_property_types.join(', ')}`;
   if ((client as any).special_requirements) ctx += `\n- متطلبات خاصة: ${(client as any).special_requirements}`;
+
+  // Once mentioned, these never get asked again — surfaced here so the model
+  // actually knows that, instead of relying on it re-reading old messages.
+  let profile: any = (client as any).ai_profile;
+  if (typeof profile === 'string') { try { profile = JSON.parse(profile); } catch { profile = {}; } }
+  const PAY_AR: Record<string, string> = { cash: 'كاش', finance: 'تمويل/تقسيط' };
+  const USE_AR: Record<string, string> = { investment: 'استثمار', residence: 'سكن', commercial: 'نشاط تجاري' };
+  if (profile?.payment_method && PAY_AR[profile.payment_method]) ctx += `\n- طريقة الدفع: ${PAY_AR[profile.payment_method]} (مذكورة سابقاً — لا تسأل عنها مرة أخرى)`;
+  if (profile?.usage_purpose && USE_AR[profile.usage_purpose]) ctx += `\n- الغرض من العقار: ${USE_AR[profile.usage_purpose]} (مذكور سابقاً — لا تسأل عنه مرة أخرى)`;
 
   if (properties?.length) {
     // The full matching list is sent right after as separate property cards —

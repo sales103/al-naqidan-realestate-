@@ -116,6 +116,11 @@ export class ClientService {
       special_requirements?: string;
       city_id?: number;
       intent?: IntentRecord;
+      /** Once the customer mentions how they'll pay or why they want the
+       *  property, it belongs on the profile — asking again mid-conversation
+       *  reads as not having listened. */
+      payment_method?: 'cash' | 'finance';
+      usage_purpose?: 'investment' | 'residence' | 'commercial';
     }
   ): Promise<void> {
     const client = await this.findById(id);
@@ -134,6 +139,17 @@ export class ClientService {
     }
     if (data.special_requirements) updates.special_requirements = data.special_requirements;
     if (data.city_id) updates.city_id = data.city_id;
+
+    if (data.payment_method || data.usage_purpose) {
+      let profile: Record<string, unknown> = client.ai_profile ?? {};
+      if (typeof profile === 'string') { try { profile = JSON.parse(profile); } catch { profile = {}; } }
+      const merged = {
+        ...profile,
+        ...(data.payment_method ? { payment_method: data.payment_method } : {}),
+        ...(data.usage_purpose ? { usage_purpose: data.usage_purpose } : {}),
+      };
+      updates.ai_profile = JSON.stringify(merged) as any;
+    }
 
     if (data.intent) {
       let raw = client.intent_history ?? [];
@@ -155,7 +171,7 @@ export class ClientService {
     await cacheDel(cacheKeys.clientProfile(id), `client:wa:${client.whatsapp_id}`);
   }
 
-  private buildClientSummary(client: Client, newData: { budget_max?: number; budget_min?: number; preferred_property_types?: string[]; special_requirements?: string; city_id?: number; intent?: any }): string {
+  private buildClientSummary(client: Client, newData: { budget_max?: number; budget_min?: number; preferred_property_types?: string[]; special_requirements?: string; city_id?: number; intent?: any; payment_method?: string; usage_purpose?: string }): string {
     const parts: string[] = [];
     const types = newData.preferred_property_types ?? (client.preferred_property_types as any) ?? [];
     const typeStr = Array.isArray(types) ? types.join('، ') : String(types ?? '');
@@ -166,6 +182,10 @@ export class ClientService {
     else if (budgetMax) parts.push(`الميزانية: حتى ${Number(budgetMax).toLocaleString('ar-SA')} ر.س`);
     const req = newData.special_requirements ?? client.special_requirements;
     if (req) parts.push(`متطلبات: ${req}`);
+    const PAY_AR: Record<string, string> = { cash: 'كاش', finance: 'تمويل' };
+    if (newData.payment_method && PAY_AR[newData.payment_method]) parts.push(`الدفع: ${PAY_AR[newData.payment_method]}`);
+    const USE_AR: Record<string, string> = { investment: 'استثمار', residence: 'سكن', commercial: 'تجاري' };
+    if (newData.usage_purpose && USE_AR[newData.usage_purpose]) parts.push(`الغرض: ${USE_AR[newData.usage_purpose]}`);
     const intent = newData.intent?.intent ?? '';
     if (intent === 'appointment_request') parts.push('يريد موعد معاينة');
     if (intent === 'human_agent_request') parts.push('طلب التحدث مع موظف');

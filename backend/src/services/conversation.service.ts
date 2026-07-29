@@ -1098,6 +1098,8 @@ export class ConversationService {
           budget_min: aiResult.extracted_data.budget_min,
           preferred_property_types: aiResult.extracted_data.property_type ? [aiResult.extracted_data.property_type] : undefined,
           city_id: cityId,
+          payment_method: aiResult.extracted_data.payment_method,
+          usage_purpose: aiResult.extracted_data.usage_purpose,
           intent: { intent: aiResult.intent.primary, confidence: aiResult.intent.confidence, timestamp: new Date().toISOString(), message_id: message.id },
         });
         } catch (e: any) {

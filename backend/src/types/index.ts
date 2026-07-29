@@ -293,6 +293,11 @@ export interface AIExtractedData {
   client_name?: string;
   urgency?: 'low' | 'medium' | 'high';
   sentiment?: 'positive' | 'neutral' | 'negative';
+  /** How the customer means to pay — once mentioned, never ask again. */
+  payment_method?: 'cash' | 'finance';
+  /** Why they want the property — distinct from purpose (sale/rent): a
+   *  buyer can be after residence, investment, or a commercial use. */
+  usage_purpose?: 'investment' | 'residence' | 'commercial';
 }
 
 export interface AIProcessingResult {
