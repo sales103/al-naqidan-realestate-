@@ -256,7 +256,7 @@ export class ConversationService {
       // Evolution may send the event as 'messages.upsert' (v2) or 'MESSAGES_UPSERT'
       const event = String(payload.event ?? '').toLowerCase().replace(/_/g, '.');
       if (event !== 'messages.upsert') return;
-      if (payload.data.key.fromMe) return;
+      if (payload.data.key.fromMe) { await this.handleStaffPhoneReply(payload); return; }
       const chatId = payload.data.key.remoteJid;
       if (!chatId || chatId.includes('@g.us')) return;
 
@@ -406,6 +406,68 @@ export class ConversationService {
         constraint: (error as any)?.constraint,
         where: (error as any)?.where,
       });
+    }
+  }
+
+  /**
+   * Evolution tags every message sent from the connected number as
+   * fromMe:true — that includes the bot's own automated replies AND a staff
+   * member answering directly from their personal phone instead of the
+   * dashboard. Those two cases need opposite handling, and the only way to
+   * tell them apart is whether we already know this message's id: the bot
+   * records it the instant it sends (see reply()/saveMessage() elsewhere),
+   * so an id we've never seen can only be a human who just took over in
+   * person. When that happens, disable the AI for that conversation — the
+   * same effect as typing "11" from the dashboard, triggered automatically
+   * so staff don't need to know that command exists to avoid the bot
+   * answering over them on the customer's next message.
+   */
+  private async handleStaffPhoneReply(payload: WhatsAppWebhookPayload): Promise<void> {
+    try {
+      const chatId = payload.data.key.remoteJid;
+      if (!chatId || chatId.includes('@g.us')) return;
+
+      const whatsappMessageId = payload.data.key.id;
+      if (whatsappMessageId) {
+        const existing = await this.db('messages').where('whatsapp_message_id', whatsappMessageId).first();
+        if (existing) return; // the bot's own send, echoed back — not a takeover
+      }
+
+      const phone = chatId.replace('@s.whatsapp.net', '');
+      // No pushName here deliberately: on an outbound-first message Evolution's
+      // pushName is the business's own profile name, not the customer's — passing
+      // it through would name a brand-new client after the office itself.
+      const { client } = await clientService.findOrCreateByWhatsapp(chatId, phone);
+      const conversation = await this.findOrCreateConversation(client.id, chatId, payload.instance || config.whatsapp.instanceName);
+
+      const { content, messageType, mediaUrl, mimeType, lat, lng, locationName } = this.extractMessageContent(payload);
+
+      await this.saveMessage({
+        conversation_id: conversation.id,
+        whatsapp_message_id: whatsappMessageId,
+        direction: 'outbound',
+        message_type: messageType,
+        status: 'sent',
+        content,
+        media_url: mediaUrl,
+        media_mime_type: mimeType,
+        location_lat: lat,
+        location_lng: lng,
+        location_name: locationName,
+        is_from_ai: false,
+      }).catch((e: any) => logger.warn('staff phone reply save failed', { error: e?.message }));
+
+      if (conversation.is_ai_enabled !== false) {
+        await this.db('conversations').where('id', conversation.id).update({
+          is_ai_enabled: false,
+          ai_handoff_requested: false,
+          handoff_reason: null,
+          updated_at: new Date(),
+        });
+        logger.info('AI disabled — staff replied directly from their phone', { conversationId: conversation.id });
+      }
+    } catch (e: any) {
+      logger.warn('handleStaffPhoneReply failed', { error: e?.message });
     }
   }
 
