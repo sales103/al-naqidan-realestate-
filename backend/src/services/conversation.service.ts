@@ -1319,7 +1319,19 @@ export class ConversationService {
           properties = preloadedProperties;
           searchSummary = 'بنفس المواصفات المطلوبة بالضبط ما لقيت خيار، لكن هذي أقرب المتاح';
         }
-      } else if (preloadedProperties.length > 0 && ctx.state === 'ai') {
+      } else if (preloadedProperties.length > 0 && ctx.state === 'ai' && !(ctx.shown_property_ids?.length)) {
+        // Safety net for exactly one moment: the very first AI-stage reply
+        // right after startSearch() hands off, in case the model's own
+        // should_send_properties came back false for that synthetic
+        // "أبحث عن..." message. Once anything has actually been shown,
+        // this must NOT keep firing — it used to run on every later message
+        // regardless of intent ("انت مين؟", "أبشر") because it only checked
+        // ctx.state === 'ai', which is true for the rest of the
+        // conversation. That meant every off-topic reply for the rest of
+        // the chat re-grabbed the same preloaded properties, deduped to
+        // zero against what was already sent, and appended "هذي كل
+        // الخيارات المتوفرة حالياً وسبق أن أرسلتها لك" to answers that had
+        // nothing to do with property listings at all.
         properties = preloadedProperties;
         searchSummary = this.buildSearchSummary(ctx, aiResult.extracted_data);
       }

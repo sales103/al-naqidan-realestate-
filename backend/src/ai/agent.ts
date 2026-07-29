@@ -169,6 +169,10 @@ const SYSTEM_PROMPT = `انت مستشار مبيعات عقاري محترف ف
 التفاوض على السعر · الحجز · توقيع العقد · شكوى · مسألة قانونية.
 قل: "يسعدنا خدمتك، وبيتواصل معك أحد مستشارينا مباشرة لإكمال هذي الخطوة."
 
+## ممنوع الادّعاء بإتمام أي إجراء لم يحدث فعلياً
+**أنت لا تحجز مواعيد ولا تثبّتها بنفسك — فقط موظف بشري يفعل ذلك عبر نظام منفصل.**
+لا تقل أبداً "تم حجز الموعد" أو "تم ربط الموعد لك" أو "ثبّتنا الموعد" أو أي صياغة تُوحي أن حجزاً تم فعلياً — حتى لو بدا العميل موافقاً أو كتب رداً غامضاً كإجابة على عرض معاينة. إن لم تكن متأكداً من قصد العميل، اسأله للتوضيح بدل افتراض الموافقة والتصرف كأن الحجز تم. نفس القاعدة تنطبق على أي إجراء آخر لا تنفّذه بنفسك (تسجيل شكوى، تحديث بيانات).
+
 ## الختام
 "سعدت بخدمتك، وأي استفسار عن بيع أو شراء أو إيجار أنا موجود."`;
 
@@ -288,6 +292,29 @@ const normalizeEnum = (
   return map[key] ?? map[String(value).trim()] ?? undefined;
 };
 
+/**
+ * A live conversation showed the customer receiving a reply with a stray
+ * "█▲Y" fragment mid-sentence — the model producing (or a token boundary
+ * mangling) an emoji/box-drawing character despite the system prompt's
+ * explicit "لا تستخدم أي إيموجي إطلاقاً" rule, with nothing downstream ever
+ * stripping it before it reached WhatsApp. This is the safety net: applied
+ * to every AI-generated customer-facing reply, regardless of source.
+ */
+const sanitizeReply = (text: string): string =>
+  text
+    // Unicode replacement character — always a sign something was mangled.
+    .replace(/�/g, '')
+    // Emoji ranges (same set normalizeAr already strips for matching).
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{20E3}]/gu, '')
+    // Block Elements + Geometric Shapes (█ ▲ ▼ ● etc.) — never legitimate
+    // in a text sales reply, only ever noise from a corrupted token.
+    .replace(/[▀-◿]/g, '')
+    // Stray control characters, keeping real newlines/tabs.
+    .replace(/[ --]/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
 const parseAIOutput = (
   raw: string,
   originalMessage: string
@@ -379,10 +406,12 @@ const parseAIOutput = (
 
   // Final safety net: strip any stray JSON/code-fence remnants the regex above
   // didn't catch, rather than forwarding a technical blob to the customer.
-  const cleanResponse = response
-    .replace(/```json?[\s\S]*?```/gi, '')
-    .replace(/JSON\s*:\s*\{[\s\S]*\}\s*$/i, '')
-    .trim();
+  const cleanResponse = sanitizeReply(
+    response
+      .replace(/```json?[\s\S]*?```/gi, '')
+      .replace(/JSON\s*:\s*\{[\s\S]*\}\s*$/i, '')
+      .trim()
+  );
 
   // Only reached when the model's whole reply got consumed as JSON (rare —
   // the model dropped the customer-facing line entirely). The rule is never
