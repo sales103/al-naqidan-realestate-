@@ -748,3 +748,42 @@ export async function classifyOption(
     return null;
   }
 }
+
+/**
+ * Reached only after classifyOption has already tried and failed to map the
+ * reply to any of the options on offer — the customer genuinely went
+ * off-script mid-menu. The old fallback was a canned "لم أفهم اختيارك"
+ * dump of the same list again, which is exactly what made a guided flow
+ * feel like filling out a form instead of talking to someone. This asks
+ * the model for one short, natural line that acknowledges whatever was
+ * actually said and steers back to the same options — which stay live
+ * for the next message regardless of what this returns.
+ */
+export async function naturalNudge(customerMessage: string, pendingTitles: string[]): Promise<string> {
+  if (!customerMessage.trim() || pendingTitles.length === 0) return '';
+  try {
+    const settings = await getAISettings();
+    const openai = buildClient(settings);
+
+    const completion = await openai.chat.completions.create({
+      model: settings.model,
+      messages: [
+        {
+          role: 'system',
+          content: 'أنت موظف مبيعات عقاري سعودي ودود ومختصر جداً. العميل كتب رداً لا يطابق أياً من الخيارات المطروحة عليه حالياً. رد بسطر أو سطرين طبيعيين فقط: اعترف بإيجاز بما قاله إن كان مفهوماً، ثم وجّهه بلطف نحو أحد الخيارات المطروحة. ممنوع الترقيم أو القوائم أو الإيموجي. ممنوع عبارات آلية مثل "لم أفهم" أو "اختر من القائمة".',
+        },
+        {
+          role: 'user',
+          content: `رسالة العميل: "${customerMessage.trim()}"\nالخيارات المطروحة عليه حالياً: ${pendingTitles.join(' / ')}`,
+        },
+      ],
+      temperature: 0.6,
+      max_tokens: 80,
+    });
+
+    return completion.choices[0]?.message?.content?.trim() ?? '';
+  } catch (error: any) {
+    logger.warn('naturalNudge failed', { error: error?.message });
+    return '';
+  }
+}

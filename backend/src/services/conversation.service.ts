@@ -2,7 +2,7 @@
 import { cacheGet, cacheSet, cacheKeys } from '../database/redis.js';
 import { logger } from '../config/logger.js';
 import { config } from '../config/index.js';
-import { processMessage, transcribeAudio, analyzeImage, formatPropertyDetails, classifyOption, pickUnclearAudio } from '../ai/agent.js';
+import { processMessage, transcribeAudio, analyzeImage, formatPropertyDetails, classifyOption, pickUnclearAudio, naturalNudge } from '../ai/agent.js';
 import { propertyService } from './property.service.js';
 import { clientService } from './client.service.js';
 import { whatsappService } from './whatsapp.service.js';
@@ -710,11 +710,25 @@ export class ConversationService {
   }
 
   /** Re-offer the same options without sounding like a broken record. */
-  private async reAsk(client: Client, conversation: Conversation, ctx: FlowContext): Promise<void> {
+  private async reAsk(client: Client, conversation: Conversation, ctx: FlowContext, text = ''): Promise<void> {
     const options = ctx.pending ?? [];
     if (options.length === 0) return;
+
+    // Only reached once resolveChoiceSmart (keyword match, then AI
+    // classification) has already failed to map the reply to any option on
+    // offer — the customer went genuinely off-script. The old canned
+    // "لم أفهم اختيارك" dump of the same list again was the single biggest
+    // thing that made this feel like a form instead of a conversation. Ask
+    // for a natural line instead; the same options stay live either way, so
+    // tapping the original list still works on the very next message.
+    const nudge = await naturalNudge(text, options.map((o) => o.title));
+    if (nudge) {
+      await this.reply(client, conversation, nudge);
+      return;
+    }
+    // The model call itself failed — never leave the customer with silence.
     const menu = options.map((o, i) => `${i + 1}. ${o.title}`).join('\n');
-    await this.reply(client, conversation, `لم أفهم اختيارك\nاختر من القائمة أو أرسل الرقم:\n\n${menu}`);
+    await this.reply(client, conversation, `تمام، عشان أخدمك بسرعة اختر من هذي:\n\n${menu}`);
   }
 
   // ===========================================================================
@@ -984,7 +998,7 @@ export class ConversationService {
       : (choice === 'intent_buy' || choice === 'intent_invest') ? 'buy'
       : undefined;
 
-    if (!purpose) { await this.reAsk(client, conversation, ctx); return; }
+    if (!purpose) { await this.reAsk(client, conversation, ctx, text); return; }
 
     // rent / buy / invest all continue into the existing category → type flow,
     // with the purpose already known so it isn't asked again at the end.
@@ -1033,7 +1047,7 @@ export class ConversationService {
       return;
     }
 
-    await this.reAsk(client, conversation, ctx);
+    await this.reAsk(client, conversation, ctx, text);
   }
 
   // ===========================================================================
@@ -1045,7 +1059,7 @@ export class ConversationService {
     client: Client, conversation: Conversation, ctx: FlowContext, message: Message,
   ): Promise<void> {
     const choice = await this.resolveChoiceSmart(clickedId, text, ctx);
-    if (!choice) { await this.reAsk(client, conversation, ctx); return; }
+    if (!choice) { await this.reAsk(client, conversation, ctx, text); return; }
 
     if (choice === 'type_house' || choice === 'type_apt_family') {
       const entry_for: 'house' | 'apt_family' = choice === 'type_house' ? 'house' : 'apt_family';
@@ -1062,7 +1076,7 @@ export class ConversationService {
       com_shop: 'shop', com_hall: 'hall', com_office: 'office', com_storage: 'warehouse',
     };
     const propType = map[choice];
-    if (!propType) { await this.reAsk(client, conversation, ctx); return; }
+    if (!propType) { await this.reAsk(client, conversation, ctx, text); return; }
 
     await this.startSearch(client, conversation, { ...ctx, property_type: propType }, message);
   }
@@ -1080,7 +1094,7 @@ export class ConversationService {
       ? { entry_private: 'apartment_family_private', entry_shared: 'apartment_family_shared' }
       : { entry_private: 'house_private', entry_shared: 'house_shared' };
     const finalType = choice ? map[choice] : undefined;
-    if (!finalType) { await this.reAsk(client, conversation, ctx); return; }
+    if (!finalType) { await this.reAsk(client, conversation, ctx, text); return; }
 
     await this.startSearch(client, conversation, { ...ctx, property_type: finalType, entry_for: undefined }, message);
   }
@@ -1697,7 +1711,7 @@ export class ConversationService {
     }
 
     const scheduled_at = choice ? slots[choice] : undefined;
-    if (!scheduled_at) { await this.reAsk(client, conversation, ctx); return; }
+    if (!scheduled_at) { await this.reAsk(client, conversation, ctx, text); return; }
 
     let propertyTitle = 'معاينة عقار';
     const propertyId = ctx.booking?.property_id;
