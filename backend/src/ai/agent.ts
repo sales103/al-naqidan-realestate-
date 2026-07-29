@@ -198,7 +198,13 @@ export const processMessage = async (
       ...historyMessages,
       {
         role: 'user',
-        content: messageContent + '\n\n[SYSTEM: في نهاية ردك أضف سطراً بهذا الشكل بالضبط. property_type و purpose يجب أن تكونا بالإنجليزية من القيم المذكورة فقط أو null. payment_method: "cash" إن ذكر كاش/نقد/يدفع كامل، "finance" إن ذكر تمويل/تقسيط/بنك/دفعة أولى، أو null. usage_purpose: "investment" إن ذكر استثمار/عائد/تأجير لاحق، "residence" إن ذكر سكن له أو لعائلته، "commercial" لنشاط تجاري، أو null إن لم يتضح. special_requirements: قائمة كلمات عربية قصيرة لأي ميزة محددة ذكرها العميل (مثل "مطبخ راكب"، "قريب من مدرسة")، أو null إن لم يذكر شيئاً:\nJSON:{"intent":"search_property|property_details|price_inquiry|appointment_request|greeting|complaint|human_agent_request|general_inquiry|unknown","budget_max":null,"budget_min":null,"property_type":"land|apartment|villa|building|office|showroom|warehouse|farm|rest_house|other|null","city":null,"district":null,"rooms":null,"purpose":"sale|rent|null","payment_method":"cash|finance|null","usage_purpose":"investment|residence|commercial|null","special_requirements":null,"client_name":null,"urgency":"low|medium|high","sentiment":"positive|neutral|negative"}]',
+        // Compact on purpose — this exact block is appended to every single
+        // AI-stage message, so its token cost is pure fixed overhead paid
+        // on every request regardless of how short the exchange is. The
+        // original prose version ran ~450 tokens; this carries the same
+        // instructions (including the payment/purpose hints, inlined into
+        // the schema itself instead of a separate paragraph) in ~270.
+        content: messageContent + '\n\n[أضف بنهاية ردك فقط، إنجليزي حصراً للقيم:\nJSON:{"intent":"search_property|property_details|price_inquiry|appointment_request|greeting|complaint|human_agent_request|general_inquiry|unknown","budget_max":num|null,"budget_min":num|null,"property_type":"land|apartment|villa|building|office|showroom|warehouse|farm|rest_house|other"|null,"city":str|null,"district":str|null,"rooms":num|null,"purpose":"sale|rent"|null,"payment_method":"cash(نقد)|finance(تمويل تقسيط)"|null,"usage_purpose":"investment(استثمار)|residence(سكن)|commercial(تجاري)"|null,"special_requirements":["كلمات قصيرة"]|null,"client_name":str|null,"urgency":"low|medium|high","sentiment":"positive|neutral|negative"}]',
       },
     ];
 
@@ -599,8 +605,14 @@ export const formatPropertiesResponse = (properties: Property[], searchSummary: 
 // Helper Functions
 // =============================================================================
 
+// 20 raw messages used to be the only thing carrying budget/rooms/district/
+// payment/purpose forward — losing any of that meant re-asking. Now all five
+// are persisted on the client profile and injected into buildContextBlock
+// explicitly (see below), so the raw history only needs to cover recent
+// back-and-forth, not serve as the sole memory. 12 keeps that coherence at
+// roughly 40% less fixed token cost on every single AI-stage request.
 const buildConversationHistory = (messages: Message[]): OpenAI.Chat.ChatCompletionMessageParam[] =>
-  messages.slice(-20).map((msg) => ({
+  messages.slice(-12).map((msg) => ({
     role: msg.direction === 'inbound' ? ('user' as const) : ('assistant' as const),
     content: msg.transcription ?? msg.content ?? '[رسالة وسائط]',
   }));

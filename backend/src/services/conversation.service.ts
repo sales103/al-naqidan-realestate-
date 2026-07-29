@@ -1241,10 +1241,11 @@ export class ConversationService {
 
       if (!messageContent.trim()) messageContent = '[رسالة وسائط]';
 
-      // agent.ts keeps the last 20 of whatever it's handed — fetching only 10
-      // here made that cap moot and meant the AI could never see further back
-      // than 5 exchanges, "forgetting" things a customer said a bit earlier.
-      const history = await this.getConversationHistory(conversation.id, 24, true);
+      // agent.ts keeps the last 12 of whatever it's handed (budget/rooms/
+      // district/payment/purpose are now persisted separately and injected
+      // into context explicitly, so raw history no longer has to be the only
+      // thing carrying those forward) — fetch a small buffer over that.
+      const history = await this.getConversationHistory(conversation.id, 14, true);
 
       // Pre-search using flow context. The office operates in Buraydah only, so
       // there is no city/district to filter by — every listing already is one.
