@@ -73,6 +73,19 @@ function buildClient(settings: AISettings): OpenAI {
   });
 }
 
+// Gemini's own API isn't OpenAI-shaped, but Google publishes an
+// OpenAI-compatible endpoint (generativelanguage.googleapis.com/v1beta/openai)
+// that works with the same OpenAI SDK used for Groq/OpenAI already — same
+// buildClient(), just a third base_url to recognise. Centralised here so
+// model selection (below) never drifts out of sync across call sites.
+type AIProvider = 'groq' | 'gemini' | 'openai';
+function detectProvider(baseUrl?: string): AIProvider {
+  if (baseUrl?.includes('groq.com')) return 'groq';
+  if (baseUrl?.includes('generativelanguage.googleapis.com')) return 'gemini';
+  return 'openai';
+}
+const PROVIDER_LABEL: Record<AIProvider, string> = { groq: 'Groq', gemini: 'Gemini', openai: 'OpenAI' };
+
 export function clearAISettingsCache(): void {
   _cachedSettings = null;
   _cacheExpiry = 0;
@@ -89,7 +102,6 @@ export async function testAIConnection(): Promise<{ provider: string; model: str
   clearAISettingsCache(); // a key just saved must not be tested against the old cached one
   const settings = await getAISettings();
   const openai = buildClient(settings);
-  const isGroqCall = settings.base_url?.includes('groq.com') ?? false;
 
   const completion = await openai.chat.completions.create({
     model: settings.model,
@@ -98,7 +110,7 @@ export async function testAIConnection(): Promise<{ provider: string; model: str
   });
 
   return {
-    provider: isGroqCall ? 'Groq' : 'OpenAI',
+    provider: PROVIDER_LABEL[detectProvider(settings.base_url)],
     model: settings.model,
     reply: completion.choices[0]?.message?.content?.trim() ?? '',
   };
@@ -191,7 +203,6 @@ export const processMessage = async (
   try {
     const settings = await getAISettings();
     const openai = buildClient(settings);
-    const isGroqCall = settings.base_url?.includes('groq.com') ?? false;
 
     const historyMessages = buildConversationHistory(conversationHistory);
     const contextBlock = buildContextBlock(client, availableProperties);
@@ -451,13 +462,17 @@ export interface TranscriptionResult {
 export const transcribeAudio = async (audioBuffer: Buffer, mimeType: string): Promise<TranscriptionResult> => {
   const settings = await getAISettings();
   const openai = buildClient(settings);
-  const isGroqCall = settings.base_url?.includes('groq.com') ?? false;
+  const provider = detectProvider(settings.base_url);
   const ext = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('mp4') ? 'mp4' : 'wav';
   const file = new File([audioBuffer], `audio.${ext}`, { type: mimeType });
 
+  // Gemini's OpenAI-compatible endpoint doesn't expose a Whisper-style
+  // /audio/transcriptions route — this call will throw for that provider,
+  // which the caller (conversation.service.ts) already handles gracefully
+  // by asking the customer to type instead of guessing at a voice note.
   const raw: any = await openai.audio.transcriptions.create({
     file,
-    model: isGroqCall ? 'whisper-large-v3' : (config.openai.whisperModel ?? 'whisper-1'),
+    model: provider === 'groq' ? 'whisper-large-v3' : (config.openai.whisperModel ?? 'whisper-1'),
     language: 'ar',
     temperature: 0,
     response_format: 'verbose_json',
@@ -494,8 +509,13 @@ export const analyzeImage = async (imageUrl: string, caption?: string): Promise<
   try {
     const settings = await getAISettings();
     const openai = buildClient(settings);
-    const isGroqCall = settings.base_url?.includes('groq.com') ?? false;
-    const visionModel = isGroqCall ? 'meta-llama/llama-4-scout-17b-16e-instruct' : (config.openai.visionModel ?? settings.model);
+    const provider = detectProvider(settings.base_url);
+    // Gemini's chat model itself is multimodal — the same model the admin
+    // picked (e.g. gemini-2.0-flash) handles vision through this same
+    // chat.completions call, no separate vision model needed.
+    const visionModel = provider === 'groq' ? 'meta-llama/llama-4-scout-17b-16e-instruct'
+      : provider === 'gemini' ? settings.model
+      : (config.openai.visionModel ?? settings.model);
     const response = await openai.chat.completions.create({
       model: visionModel,
       messages: [{

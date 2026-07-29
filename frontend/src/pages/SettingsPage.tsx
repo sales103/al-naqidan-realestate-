@@ -192,10 +192,32 @@ function AISettings() {
         { value: 'gpt-3.5-turbo', label: 'GPT-3.5',   badge: 'الأسرع' },
       ],
     },
+    {
+      value: 'gemini', label: 'Gemini', badge: 'باقة مجانية',
+      // Google's OpenAI-compatible endpoint — same SDK, same request shape
+      // as Groq/OpenAI, just a different base_url and key.
+      url: 'https://generativelanguage.googleapis.com/v1beta/openai/', color: '#4285F4',
+      models: [
+        { value: 'gemini-2.0-flash',      label: 'Gemini 2.0 Flash',      badge: 'موصى به' },
+        { value: 'gemini-1.5-flash',      label: 'Gemini 1.5 Flash',      badge: 'الأسرع' },
+        { value: 'gemini-1.5-pro',        label: 'Gemini 1.5 Pro',        badge: 'الأذكى' },
+      ],
+    },
   ];
 
-  const isGroq = form.base_url?.includes('groq.com') || (!form.base_url && form.openai_model.includes('llama'));
-  const currentProvider = isGroq ? PROVIDERS[0] : PROVIDERS[1];
+  // Matched by base_url rather than a hand-picked binary flag, so a third
+  // (or later, fourth) provider never has to fight over what "not Groq"
+  // means. Falls back to Groq only for legacy rows saved before base_url
+  // was always written explicitly.
+  const activeProvider = PROVIDERS.find(p => form.base_url && p.url === form.base_url)
+    ?? (!form.base_url && form.openai_model.includes('llama') ? PROVIDERS[0] : undefined)
+    ?? PROVIDERS[1];
+  const currentProvider = activeProvider!;
+  const apiKeyHelpUrl: Record<string, string> = {
+    groq: 'console.groq.com/keys',
+    openai: 'platform.openai.com/api-keys',
+    gemini: 'aistudio.google.com/apikey',
+  };
 
   return (
     <div className="space-y-5 max-w-2xl">
@@ -215,9 +237,9 @@ function AISettings() {
 
       {/* Section 1: Provider */}
       <Section num={1} title="مزود الذكاء الاصطناعي" color="#3B5BDB">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {PROVIDERS.map(p => {
-            const isActive = p.value === 'groq' ? isGroq : !isGroq;
+            const isActive = p.value === currentProvider.value;
             return (
               <button key={p.value} type="button"
                 onClick={() => { set('base_url', p.url); set('openai_model', p.models[0].value); }}
@@ -262,7 +284,7 @@ function AISettings() {
           <p className="text-xs mt-1.5" style={{ color: '#7A8FAA' }}>
             احصل على مفتاحك من{' '}
             <span className="font-mono px-1.5 py-0.5 rounded" style={{ background: 'rgba(59,91,219,0.07)', color: '#3B5BDB' }}>
-              {isGroq ? 'console.groq.com/keys' : 'platform.openai.com/api-keys'}
+              {apiKeyHelpUrl[currentProvider.value]}
             </span>
           </p>
         </div>
