@@ -121,6 +121,11 @@ export class ClientService {
        *  reads as not having listened. */
       payment_method?: 'cash' | 'finance';
       usage_purpose?: 'investment' | 'residence' | 'commercial';
+      /** Same reasoning as budget: re-extracted fresh from every message, so
+       *  a mention that isn't repeated three messages later must still be
+       *  on file somewhere, not just hoped the model still remembers it. */
+      rooms?: number;
+      district?: string;
     }
   ): Promise<void> {
     const client = await this.findById(id);
@@ -139,6 +144,8 @@ export class ClientService {
     }
     if (data.special_requirements) updates.special_requirements = data.special_requirements;
     if (data.city_id) updates.city_id = data.city_id;
+    if (data.rooms) updates.rooms_needed = data.rooms;
+    if (data.district) updates.district = data.district;
 
     if (data.payment_method || data.usage_purpose) {
       let profile: Record<string, unknown> = client.ai_profile ?? {};

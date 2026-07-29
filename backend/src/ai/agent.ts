@@ -621,6 +621,8 @@ const buildContextBlock = (client: Client, properties?: Property[]): string => {
   if ((client as any).budget_max) ctx += `\n- الميزانية القصوى: ${Number((client as any).budget_max).toLocaleString('ar-SA')} ريال`;
   if ((client as any).preferred_property_types?.length) ctx += `\n- يبحث عن: ${(client as any).preferred_property_types.join(', ')}`;
   if ((client as any).special_requirements) ctx += `\n- متطلبات خاصة: ${(client as any).special_requirements}`;
+  if ((client as any).rooms_needed) ctx += `\n- عدد الغرف المطلوب: ${(client as any).rooms_needed} (مذكور سابقاً — لا تسأل عنه مرة أخرى)`;
+  if ((client as any).district) ctx += `\n- الحي المفضّل: ${(client as any).district} (مذكور سابقاً — لا تسأل عنه مرة أخرى)`;
 
   // Once mentioned, these never get asked again — surfaced here so the model
   // actually knows that, instead of relying on it re-reading old messages.

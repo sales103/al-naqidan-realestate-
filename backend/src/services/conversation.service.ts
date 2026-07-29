@@ -1285,6 +1285,8 @@ export class ConversationService {
           city_id: cityId,
           payment_method: aiResult.extracted_data.payment_method,
           usage_purpose: aiResult.extracted_data.usage_purpose,
+          rooms: aiResult.extracted_data.rooms,
+          district: aiResult.extracted_data.district,
           intent: { intent: aiResult.intent.primary, confidence: aiResult.intent.confidence, timestamp: new Date().toISOString(), message_id: message.id },
         });
         } catch (e: any) {
@@ -1302,7 +1304,7 @@ export class ConversationService {
       let searchSummary = '';
 
       if (aiResult.should_send_properties && aiResult.property_search_params) {
-        const enriched = await this.enrichSearchParams(aiResult.property_search_params, aiResult.extracted_data, ctx);
+        const enriched = await this.enrichSearchParams(aiResult.property_search_params, aiResult.extracted_data, ctx, client);
         const result = await propertyService.search(enriched);
         properties = result.properties;
         searchSummary = this.buildSearchSummary(ctx, aiResult.extracted_data);
@@ -1635,14 +1637,31 @@ export class ConversationService {
     return 'سيتواصل معك أحد مستشارينا في أقرب وقت خلال ساعات العمل:\nصباحاً: 9:30 - 12:00\nمساءً: 4:00 - 9:30\n\nونحن سعداء بخدمتك دائماً.';
   }
 
-  private async enrichSearchParams(params: PropertySearchParams, extracted: any, ctx: FlowContext): Promise<PropertySearchParams> {
+  private async enrichSearchParams(
+    params: PropertySearchParams, extracted: any, ctx: FlowContext, client: Client,
+  ): Promise<PropertySearchParams> {
     const enriched = { ...params };
     // Buraydah is implicit for the whole business — only filter when the
     // customer volunteers a specific district, so a mention still narrows results.
     const typeInfo = PROPERTY_TYPE_MAP[ctx.property_type ?? ''];
     if (typeInfo?.occupancy) enriched.occupancy_type = typeInfo.occupancy;
     if (typeInfo?.entrance)  enriched.entrance_type  = typeInfo.entrance;
-    const district = extracted.district ?? extracted.city;
+
+    // Budget and room count are re-extracted from THIS message alone — if the
+    // customer mentioned them once and just said "وريني غيرها" three
+    // messages later without repeating them, relying on the model to
+    // re-derive both from scratch every single turn is a coin flip. Fall
+    // back to what's already on file (persisted the moment they were first
+    // mentioned — see updateFromAI below) so a dropped mention in one
+    // message doesn't silently widen the search.
+    if (enriched.price_max === undefined && (client as any).budget_max) {
+      enriched.price_max = (client as any).budget_max;
+    }
+    if (enriched.rooms === undefined && (client as any).rooms_needed) {
+      enriched.rooms = (client as any).rooms_needed;
+    }
+
+    const district = extracted.district ?? extracted.city ?? (client as any).district;
     if (district) {
       const distId = await propertyService.resolveDistrictId(district);
       if (distId) enriched.district_ids = [distId];
