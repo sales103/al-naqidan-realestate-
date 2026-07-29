@@ -310,7 +310,7 @@ const sanitizeReply = (text: string): string =>
     // in a text sales reply, only ever noise from a corrupted token.
     .replace(/[▀-◿]/g, '')
     // Stray control characters, keeping real newlines/tabs.
-    .replace(/[ --]/g, '')
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '')
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
@@ -371,7 +371,7 @@ const parseAIOutput = (
         .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06F0));
       // "مليون" / "million" without digits still carries a magnitude.
       const millions = /مليون|million/i.test(latin);
-      const thousands = /ألف|الف|thousand|k/i.test(latin);
+      const thousands = /ألف|الف|thousand|k\b/i.test(latin);
       const digits = latin.replace(/[^\d.]/g, '');
       let n = parseFloat(digits);
       if (!Number.isFinite(n) || n <= 0) return undefined;
