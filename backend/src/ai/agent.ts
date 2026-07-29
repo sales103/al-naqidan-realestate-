@@ -72,6 +72,32 @@ export function clearAISettingsCache(): void {
   _cacheExpiry = 0;
 }
 
+/**
+ * Fires one cheap, real completion call against whichever key/provider is
+ * currently saved, and reports back exactly which model answered — the only
+ * way to actually confirm a newly-pasted key is the one in effect, rather
+ * than assuming the save succeeded. Surfaces the provider's own error
+ * message on failure (e.g. an invalid key) instead of swallowing it.
+ */
+export async function testAIConnection(): Promise<{ provider: string; model: string; reply: string }> {
+  clearAISettingsCache(); // a key just saved must not be tested against the old cached one
+  const settings = await getAISettings();
+  const openai = buildClient(settings);
+  const isGroqCall = settings.base_url?.includes('groq.com') ?? false;
+
+  const completion = await openai.chat.completions.create({
+    model: settings.model,
+    messages: [{ role: 'user', content: 'رد بكلمة واحدة فقط: تمام' }],
+    max_tokens: 10,
+  });
+
+  return {
+    provider: isGroqCall ? 'Groq' : 'OpenAI',
+    model: settings.model,
+    reply: completion.choices[0]?.message?.content?.trim() ?? '',
+  };
+}
+
 // =============================================================================
 // System Prompt — Professional Saudi Real Estate AI
 // =============================================================================

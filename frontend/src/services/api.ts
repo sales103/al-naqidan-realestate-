@@ -137,5 +137,6 @@ export const settingsApi = {
   get:        (key: string)             => api.get(`/settings/${key}`),
   save:       (key: string, value: any) => api.put(`/settings/${key}`, { value }),
   testEmail:  (to: string)              => api.post('/settings/test-email', { to }),
+  testAI:     ()                        => api.post('/settings/test-ai'),
   getCompany: ()                        => api.get('/settings/company'),
 };

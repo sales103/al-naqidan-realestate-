@@ -5,7 +5,7 @@ import {
   EyeIcon, EyeSlashIcon, CpuChipIcon,
   BuildingOfficeIcon, ClockIcon, SparklesIcon,
   ShieldCheckIcon, GlobeAltIcon, PhoneIcon,
-  CheckIcon, XMarkIcon, PaperAirplaneIcon,
+  CheckIcon, XMarkIcon, PaperAirplaneIcon, BoltIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { settingsApi, api } from '../services/api.ts';
@@ -152,6 +152,16 @@ function AISettings() {
     }),
     onSuccess: () => { toast.success('تم حفظ إعدادات الذكاء الاصطناعي'); qc.invalidateQueries({ queryKey: ['settings'] }); },
     onError: (e: any) => toast.error(e.response?.data?.error ?? 'فشل الحفظ'),
+  });
+
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const testMut = useMutation({
+    mutationFn: () => settingsApi.testAI(),
+    onSuccess: (res: any) => {
+      const d = res?.data?.data;
+      setTestResult({ ok: true, msg: `متصل الآن عبر ${d?.provider} — النموذج: ${d?.model}` });
+    },
+    onError: (e: any) => setTestResult({ ok: false, msg: e.response?.data?.error ?? 'فشل الاتصال — تحقق من المفتاح' }),
   });
 
   if (isLoading) return <LoadingPulse />;
@@ -348,7 +358,31 @@ function AISettings() {
         </div>
       </Section>
 
-      <SaveBtn pending={saveMut.isPending} label="حفظ إعدادات الذكاء الاصطناعي" onClick={() => saveMut.mutate()} />
+      {testResult && (
+        <div className="flex items-center gap-2.5 p-3.5 rounded-xl text-sm font-medium" style={{
+          background: testResult.ok ? 'rgba(5,150,105,0.08)' : 'rgba(239,68,68,0.08)',
+          border: `1px solid ${testResult.ok ? 'rgba(5,150,105,0.2)' : 'rgba(239,68,68,0.2)'}`,
+          color: testResult.ok ? '#059669' : '#DC2626',
+        }}>
+          {testResult.ok
+            ? <CheckCircleIcon className="w-5 h-5 flex-shrink-0" />
+            : <XMarkIcon className="w-5 h-5 flex-shrink-0" />}
+          {testResult.msg}
+        </div>
+      )}
+
+      <div className="flex gap-3">
+        <SaveBtn pending={saveMut.isPending} label="حفظ إعدادات الذكاء الاصطناعي" onClick={() => saveMut.mutate()} />
+        <button onClick={() => testMut.mutate()} disabled={testMut.isPending}
+          className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold rounded-xl transition-all disabled:opacity-60"
+          style={{ background: 'rgba(59,91,219,0.08)', color: '#3B5BDB', border: '1px solid rgba(59,91,219,0.2)' }}>
+          <BoltIcon className="w-4 h-4" />
+          {testMut.isPending ? 'جاري الاختبار...' : 'اختبار الاتصال'}
+        </button>
+      </div>
+      <p className="text-xs" style={{ color: '#94A3B8' }}>
+        الاختبار يتحقق من المفتاح المحفوظ حالياً — احفظ التغييرات أولاً قبل الاختبار
+      </p>
     </div>
   );
 }

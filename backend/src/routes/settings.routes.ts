@@ -3,7 +3,7 @@ import { authenticate } from '../middleware/auth.middleware.js';
 import { getDatabase } from '../database/connection.js';
 import { AppError } from '../middleware/error.middleware.js';
 import { z } from 'zod';
-import { clearAISettingsCache } from '../ai/agent.js';
+import { clearAISettingsCache, testAIConnection } from '../ai/agent.js';
 import { audit } from '../services/audit.service.js';
 
 const router = Router();
@@ -113,6 +113,24 @@ router.post('/test-email', requireAdmin, async (req: Request, res: Response, nex
     res.json({ success: true, message: 'تم إرسال البريد التجريبي' });
   } catch (error: any) {
     next(new AppError(500, error.message ?? 'فشل إرسال البريد'));
+  }
+});
+
+// POST /api/settings/test-ai — fires one real completion call so the admin
+// can confirm a newly-pasted key actually works and which provider answered.
+router.post('/test-ai', requireAdmin, async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const result = await testAIConnection();
+    res.json({
+      success: true,
+      data: result,
+      message: `الاتصال ناجح — الرد وصل من ${result.provider} (${result.model})`,
+    });
+  } catch (error: any) {
+    // Surface the provider's own error verbatim (e.g. "Incorrect API key
+    // provided") — that's exactly what confirms whether the key is the problem.
+    const providerMessage = error?.error?.message || error?.message || 'فشل الاتصال';
+    next(new AppError(500, providerMessage));
   }
 });
 
